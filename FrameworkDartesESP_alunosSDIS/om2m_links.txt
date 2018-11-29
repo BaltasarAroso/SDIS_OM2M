@@ -1,0 +1,30 @@
+Informações sobre OM2M
+
+http://www.onem2m.org/developers-corner/documentation/getting-started
+https://wiki.eclipse.org/OM2M
+
+http://www.onem2m.org/application-developer-guide
+
+https://wiki.eclipse.org/OM2M/Starting
+https://wiki.eclipse.org/OM2M/Containers
+https://wiki.eclipse.org/OM2M/one/MQTT_Binding
+
+http://wiki.onem2m.org/index.php?title=Main_Page
+
+-----------------------------------------------
+
+em   /org.eclipse.om2m.site.in-cse   editar  org.eclipse.om2m.cseBaseName   do ficheiro config.ini
+
+-----------------------------------------------
+
+Links SDK ESP
+
+	ESP8266
+		https://github.com/espressif/ESP8266_RTOS_SDK
+		
+	
+	ESP32
+		https://github.com/espressif/esp-idf
+
+----------------- 
+no menuconfig escolher Flash mode DIO
