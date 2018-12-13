@@ -4,3 +4,4 @@ build/
 .settings/
 .cproject
 .project
+sdkconfig[.old]

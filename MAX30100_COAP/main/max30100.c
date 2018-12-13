@@ -37,9 +37,9 @@ esp_err_t max30100_init()
     // Configure sensor
     printf("Configuring sensor..\n");
 #if DEBUG >= 0
-    printf("Setting configuration: %x\n", MAX30100_MODE_HRONLY);
+    printf("Setting configuration: %x\n", MAX30100_MODE_SPO2_HR);
 #endif
-    max30100_set_mode(MAX30100_MODE_HRONLY);
+    max30100_set_mode(MAX30100_MODE_SPO2_HR);
     max30100_set_led_width(LED_PULSE_WIDTH);
     max30100_set_sampling(SAMPLING_RATE);
 #if DEBUG >= 0
@@ -414,7 +414,7 @@ esp_err_t max30100_set_leds(uint8_t red_c, uint8_t ir_c)
 }
 void max30100_test_conf()
 {
-    printf("Enabling HR/SPO2 mode..\n");
+    printf("Enabling HR/SPO2 mode..\n");    
     ESP_ERROR_CHECK(max30100_set_mode(MAX30100_MODE_SPO2_HR));
     printf("done.\n");
 
