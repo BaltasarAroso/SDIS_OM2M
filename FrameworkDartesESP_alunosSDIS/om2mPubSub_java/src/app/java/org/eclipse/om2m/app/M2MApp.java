@@ -1,12 +1,12 @@
-package  org.eclipse.om2m.app;
+package org.eclipse.om2m.app;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.io.*;
 import java.util.concurrent.ExecutorService;
@@ -26,7 +26,7 @@ public class M2MApp {
     public static M2MApp instance = null;
     private static ExecutorService notService;
 
-    public static String filesFolder = "/home/dartes/testesESP/";
+    public static String filesFolder = "C:\\Users\\Andre\\Escola\\feup\\5_ano\\1_sem\\SDIS\\project\\files_folder";
 
 
     public static int numberThreads = 1;
@@ -36,38 +36,38 @@ public class M2MApp {
 
     public static int counterReceptions = 0;
 
-    public static HashMap<String,Long> tEpochsSub = null;
-    
+    public static HashMap<String, Long> tEpochsSub = null;
+
 
     private static HttpServer server = null;
 
-    private static String originator="admin:admin";
-    private static String cseProtocol="http";
-    private static String cseIp = "192.168.106.131";//"192.168.106.131";//192.168.106.128"; //"192.168.1.69"
+    private static String originator = "admin:admin";
+    private static String cseProtocol = "http";
+    private static String cseIp = "10.227.144.30";
     private static int csePort = 8080;
     private static String cseId = "in-cse";
     private static String cseName = "dartes";
 
     private static String aeNamePub = "pc_pub";
     private static int appPubId = 12345;
-    
+
     private static String aeNameMaster = "master";
     private static int appMasterId = 67891;
-    
+
     private static String cntNamePub = "HR";
     private static String cntNameMaster = "ctrlcmd";
 
     private static String aeMonitorName = "mymonitor";
-    private static String aeProtocol="http";    
-    private static String aeIp = "192.168.106.131";//"192.168.106.131"; //"192.168.1.69";
+    private static String aeProtocol = "http";
+    private static String aeIp = "10.227.144.30";
     private static int aePort = 1600;
-    private static String subName="monitorsub";
+    private static String subName = "monitorsub";
     private static String targetCse = "in-cse/dartes";
 
 
-    private static String csePoa = cseProtocol+"://"+cseIp+":"+csePort;
-    private static String appPoa = aeProtocol+"://"+aeIp+":"+aePort;
-  
+    private static String csePoa = cseProtocol + "://" + cseIp + ":" + csePort;
+    private static String appPoa = aeProtocol + "://" + aeIp + ":" + aePort;
+
 
     public static boolean flagSubscription = false;
 
@@ -76,7 +76,7 @@ public class M2MApp {
     }
 
     public static M2MApp getInstance() {
-        if(instance == null) {
+        if (instance == null) {
             instance = new M2MApp();
         }
         return instance;
@@ -89,9 +89,9 @@ public class M2MApp {
      * Creates Server
      */
     public void startServer() {
-        tEpochsSub = new HashMap<String,Long>();
+        tEpochsSub = new HashMap<String, Long>();
         //create more threads for receptions...
-        notService = Executors.newFixedThreadPool(numberThreads*10);
+        notService = Executors.newFixedThreadPool(numberThreads * 10);
 
         System.out.println("start server");
 
@@ -114,18 +114,19 @@ public class M2MApp {
      */
     static class MyHandlerM2M implements HttpHandler {
 
-        public void handle(HttpExchange httpExchange)  {
+        public void handle(HttpExchange httpExchange) {
             System.out.println("Event Received!");
             long epoch = System.currentTimeMillis();
 
-            try{
+            try {
                 InputStream in = httpExchange.getRequestBody();
 
                 String requestBody = "";
-                int i;char c;
+                int i;
+                char c;
                 while ((i = in.read()) != -1) {
                     c = (char) i;
-                    requestBody = (String) (requestBody+c);
+                    requestBody = (String) (requestBody + c);
                 }
 
                 //System.out.println(requestBody);
@@ -134,7 +135,7 @@ public class M2MApp {
                 if (json.getJSONObject("m2m:sgn").has("m2m:vrq")) {
                     System.out.println("Confirm subscription");
                 } else {
-                    if(flagSubscription) {
+                    if (flagSubscription) {
 
                         if (json.getJSONObject("m2m:sgn").has("m2m:nev")) {
                             if (json.getJSONObject("m2m:sgn").getJSONObject("m2m:nev").has("m2m:rep")) {
@@ -145,7 +146,7 @@ public class M2MApp {
                                     if (ty == 4) {
                                         counterReceptions++;
                                         String ciName = cin.getString("rn");
-                                        System.out.println(counterReceptions+","+ciName+","+epoch);
+                                        System.out.println(counterReceptions + "," + ciName + "," + epoch);
                                         //System.out.println(counterReceptions + " [INFO] " + ciName + " has been created");
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
@@ -157,14 +158,14 @@ public class M2MApp {
 
                 // Server needs the response. Otherwise, it issues the following in the terminal:
                 // org.apache.http.NoHttpResponseException: IPXXX:PORTYYY failed to respond
-                String responseBudy ="";
-                byte[] out = responseBudy.getBytes("UTF-8");
+                String responseBudy = "";
+                byte[] out = responseBudy.getBytes(StandardCharsets.UTF_8);
                 httpExchange.sendResponseHeaders(200, out.length);
                 OutputStream os = httpExchange.getResponseBody();
                 os.write(out);
                 os.close();
 
-            } catch(Exception e){
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
@@ -177,7 +178,7 @@ public class M2MApp {
 
         try {
             TimeUnit.SECONDS.sleep(10);
-        }catch(InterruptedException e){
+        } catch (InterruptedException e) {
             System.out.println(e.getMessage());
         }
         server.stop(0);
@@ -197,14 +198,14 @@ public class M2MApp {
             PrintWriter tSubWriter = null;
 
             try {
-                tSubWriter = new PrintWriter(filesFolder+"sub_2_" + "frequency_" + frequency + "_"+"size_" + size +  "_Run"+run+".txt", "UTF-8");
+                tSubWriter = new PrintWriter(filesFolder + "sub_2_" + "frequency_" + frequency + "_" + "size_" + size + "_Run" + run + ".txt", "UTF-8");
             } catch (Exception e) {
                 e.printStackTrace();
             }
 
             Iterator subIt = tEpochsSub.entrySet().iterator();
             while (subIt.hasNext()) {
-                Map.Entry pair = (Map.Entry)subIt.next();
+                Map.Entry pair = (Map.Entry) subIt.next();
                 tSubWriter.println(pair.getKey() + "," + pair.getValue());
                 subIt.remove(); // avoids a ConcurrentModificationException
             }
@@ -220,22 +221,22 @@ public class M2MApp {
      * Issues a creation of a new monitor application and creates a new subscription
      * TODO: Change method to include rnapp, api, rn sub
      *
-     * @return      HTTPResponse
+     * @return HTTPResponse
      */
-   public void createMonitor() {
+    public void createMonitor() {
         JSONArray array = new JSONArray();
         array.put(appPoa);
         JSONObject obj = new JSONObject();
         obj.put("rn", aeMonitorName);
         obj.put("api", 12346);
         obj.put("rr", true);
-        obj.put("poa",array);
+        obj.put("poa", array);
         JSONObject ae = new JSONObject();
         ae.put("m2m:ae", obj);
-        RestHttpClient.post(originator, csePoa+"/~/"+cseId+"/"+cseName, ae.toString(), 2);
+        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
 
         JSONArray array2 = new JSONArray();
-        array2.put("/"+cseId+"/"+cseName+"/"+aeMonitorName);
+        array2.put("/" + cseId + "/" + cseName + "/" + aeMonitorName);
         JSONObject obj2 = new JSONObject();
         obj2.put("nu", array2);
         obj2.put("rn", subName);
@@ -243,15 +244,15 @@ public class M2MApp {
         JSONObject sub = new JSONObject();
         sub.put("m2m:sub", obj2);
         //HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa+"/~/"+targetCse+"/"+aeName+"/"+cntName, sub.toString(), 23);
-        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa+"/~/"+targetCse+"/esp_pub/HR", sub.toString(), 23);
+        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/esp_pub/HR", sub.toString(), 23);
 
     }
 
     /**
      * Creates a new application
      *
-     * @param  name application
-     * @param  id application
+     * @param applicationId application
+     * @param appId         application
      */
     public void createApplication(String applicationId, int appId) {
         JSONObject obj = new JSONObject();
@@ -260,13 +261,13 @@ public class M2MApp {
         obj.put("rr", false);
         JSONObject resource = new JSONObject();
         resource.put("m2m:ae", obj);
-        RestHttpClient.post(originator, csePoa+"/~/"+cseId+"/"+cseName, resource.toString(), 2);
+        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, resource.toString(), 2);
     }
 
     /**
      * Creates a new container
      *
-     * @param  name container
+     * @param containerId container
      */
     public void createContainer(String aeName, String containerId) {
 
@@ -274,7 +275,7 @@ public class M2MApp {
         obj.put("rn", containerId);
         JSONObject resource = new JSONObject();
         resource.put("m2m:cnt", obj);
-        RestHttpClient.post(originator, csePoa+"/~/"+cseId+"/"+cseName+"/"+aeName, resource.toString(), 3);
+        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName, resource.toString(), 3);
     }
 
 
@@ -282,21 +283,21 @@ public class M2MApp {
      * Creates a new contentInstance and store there data
      * Add application name instead of static
      *
-     * @param  name data
-     * @param  name container
-     * @param  name contentInstance
+     * @param data              data
+     * @param containerId       container
+     * @param contentInstanceId contentInstance
      */
     public void createContentInstance(String data, String aeName, String containerId, String contentInstanceId) {
 
         JSONObject obj = new JSONObject();
-        obj.put("rn",  contentInstanceId);
-        obj.put("pc",  "cenas_teste");
+        obj.put("rn", contentInstanceId);
+        obj.put("pc", "cenas_teste");
         obj.put("cnf", "application/json");
         obj.put("con", data);
         JSONObject resource = new JSONObject();
         resource.put("m2m:cin", obj);
 
-        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa+"/~/"+cseId+"/"+cseName+"/"+aeName+"/"+containerId, resource.toString(), 4);
+        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName + "/" + containerId, resource.toString(), 4);
         //System.out.println("Status: " + httpResponse.getStatusCode());
 
     }
@@ -304,7 +305,7 @@ public class M2MApp {
     /**
      * Sets a counter
      *
-     * @param  counter  seconds
+     * @param secCounter seconds
      */
     public void counterTime(int secCounter) throws InterruptedException {
         System.out.println("Counter");
@@ -324,10 +325,9 @@ public class M2MApp {
     }
 
 
-    public void addToEpochSub (String edge, long millis) {
-        tEpochsSub.put(edge,millis);
+    public void addToEpochSub(String edge, long millis) {
+        tEpochsSub.put(edge, millis);
     }
-
 
 
     public static void main(String[] args) throws IOException, InterruptedException {
@@ -343,13 +343,13 @@ public class M2MApp {
             }
         }
 
-        System.out.println("oM2M PoA: "+csePoa);
-        System.out.println("Publisher/Subscriber PoA: "+appPoa);
-        System.out.println("Number of Threads: "+numberThreads);
-        System.out.println("Folder for files: "+filesFolder);
+        System.out.println("oM2M PoA: " + csePoa);
+        System.out.println("Publisher/Subscriber PoA: " + appPoa);
+        System.out.println("Number of Threads: " + numberThreads);
+        System.out.println("Folder for files: " + filesFolder);
 
         // Delete publish and monitor app via API
-       // RestHttpClient.delete(originator, csePoa+"/~/"+"in-cse/acp-876889265");
+        // RestHttpClient.delete(originator, csePoa+"/~/"+"in-cse/acp-876889265");
         //RestHttpClient.delete(originator, csePoa+"/~/"+"in-cse/acp-735229994");
         //RestHttpClient.delete(originator, csePoa+"/~/"+cseId+"/"+cseName+"/"+aeNamePub);
         //RestHttpClient.delete(originator, csePoa+"/~/"+cseId+"/"+cseName+"/"+aeMonitorName);
@@ -357,46 +357,43 @@ public class M2MApp {
 
 
         M2MApp.getInstance().startServer();
-        M2MApp.getInstance().createApplication(aeNameMaster,appMasterId);
+        M2MApp.getInstance().createApplication(aeNameMaster, appMasterId);
         M2MApp.getInstance().createMonitor();
         flagSubscription = true;  // start collecting times
-        
-        
-      	//M2MApp.getInstance().createApplication(aeNamePub,appPubId);
+
+
+        //M2MApp.getInstance().createApplication(aeNamePub,appPubId);
         //M2MApp.getInstance().createContainer(aeNamePub, cntNamePub);
-        
-        
+
+
         //String data = "73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s";
-        
+
         //Thread.sleep(20000);
         
       /*  for (int i = 52; i < 10000; i++) {        	
          	M2MApp.getInstance().createContentInstance(data, aeNamePub, cntNamePub, Integer.toString(i));
          	Thread.sleep(5000);
  		}*/
-       
+
         return;
 
-     //M2MApp.getInstance().createApplication(aeNameMaster,appMasterId);        
-       
-     // M2MApp.getInstance().createContainer(aeNameMaster, cntNameMaster);
-       // M2MApp.getInstance().createContainer(aeNamePub, cntNamePub);
-        
+        //M2MApp.getInstance().createApplication(aeNameMaster,appMasterId);
 
-        
-      // M2MApp.getInstance().createContainer(aeNameMaster, cntNameMaster);
-        
-    
- // M2MApp.getInstance().createContentInstance(String.valueOf(System.currentTimeMillis()), aeNameMaster, cntNameMaster, Long.toString(System.currentTimeMillis()));
-        
-      //System.currentTimeMillis()
-        
+        // M2MApp.getInstance().createContainer(aeNameMaster, cntNameMaster);
+        // M2MApp.getInstance().createContainer(aeNamePub, cntNamePub);
 
-        
-        
-       // M2MApp.getInstance().createContentInstance("0x", aeNameMaster, cntNameMaster, "Modem-sleep");
-        
-        
+
+        // M2MApp.getInstance().createContainer(aeNameMaster, cntNameMaster);
+
+
+        // M2MApp.getInstance().createContentInstance(String.valueOf(System.currentTimeMillis()), aeNameMaster, cntNameMaster, Long.toString(System.currentTimeMillis()));
+
+        //System.currentTimeMillis()
+
+
+        // M2MApp.getInstance().createContentInstance("0x", aeNameMaster, cntNameMaster, "Modem-sleep");
+
+
         //M2MApp.getInstance().createMonitor();
         
         

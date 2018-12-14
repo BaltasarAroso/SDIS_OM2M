@@ -4,3 +4,6 @@ build/
 .settings/
 .cproject
 .project
+**/om2mPubSub_java/.idea/*
+**/om2mPubSub_java/out/*
+**/om2mPubSub_java/**/*.iml

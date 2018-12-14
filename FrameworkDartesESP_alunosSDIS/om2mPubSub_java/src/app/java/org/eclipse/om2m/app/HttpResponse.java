@@ -2,7 +2,6 @@ package org.eclipse.om2m.app;
 
 /**
  * Used to store and get HTTP response codes and payloads
- *
  */
 public class HttpResponse {
     private int statusCode;
