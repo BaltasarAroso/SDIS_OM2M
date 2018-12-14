@@ -68,7 +68,7 @@
 #define DEBUG_INIT
 #define DEBUG_TEST
 #define DEBUG_FIFO
-#define DEBUG
+#define _DEBUG_
 
 #define MAX30100_MODE_HRONLY 0x02   // Heart rate only
 #define MAX30100_MODE_SPO2_HR 0x03  // Enable SpO2 monitor

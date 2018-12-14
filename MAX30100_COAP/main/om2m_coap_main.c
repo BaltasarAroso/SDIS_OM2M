@@ -74,7 +74,7 @@ static void message_handler(struct coap_context_t *ctx,
     }
   }
 }
-
+#if 0
 static void coap_retransmition_handler(void *pvParameters) {
   coap_context_t *ctx = (coap_context_t *)pvParameters;
   coap_tick_t now;
@@ -101,12 +101,12 @@ static void coap_retransmition_handler(void *pvParameters) {
     vTaskDelay(100 / portTICK_RATE_MS);
   }
 }
-
+#endif
 static void coap_context_handler(void *pvParameters) {
   coap_context_t *ctx = (coap_context_t *)pvParameters;
   fd_set readfds;
   struct timeval tv;
-  int flags, result;
+  int result;
   coap_queue_t *nextpdu;
   coap_tick_t now;
 

@@ -31,13 +31,13 @@ esp_err_t max30100_init() {
   ESP_ERROR_CHECK(i2c_driver_install(i2c_master_port, conf.mode));
   ESP_ERROR_CHECK(i2c_param_config(i2c_master_port, &conf));
 
-#if defined(DEBUG) && defined(DEBUG_TEST)
+#if defined(_DEBUG_) && defined(DEBUG_TEST)
   max30100_test_conf();
 #endif
   // Configure sensor
   printf("Configuring sensor..\n");
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting configuration: %x\n", MODE);
 #endif
 
@@ -45,14 +45,14 @@ esp_err_t max30100_init() {
   max30100_set_led_width(LED_PULSE_WIDTH);
   max30100_set_sampling(SAMPLING_RATE);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting leds currents\tIR: %x\tRED: %x -> %x\n", IR_LED_CURRENT,
          RED_LED_CURRENT, RED_LED_CURRENT << 4 | IR_LED_CURRENT);
 #endif
 
   max30100_set_leds(RED_LED_CURRENT, IR_LED_CURRENT);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   uint8_t leds;
   esp_err_t ret = max30100_read_byte(MAX30100_REG_LED_CONFIGURATION, &leds);
   printf("Leds set: %x -> %d\n", leds, ret);
@@ -69,27 +69,27 @@ i2c_cmd_handle_t max30100_start(uint8_t reg_address, uint8_t mode) {
   i2c_cmd_handle_t cmd;
   esp_err_t ret;
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Starting link\n");
 #endif
 
   cmd = i2c_cmd_link_create();
   i2c_master_start(cmd);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Sending MAX30100 addr + mode: ");
 #endif
 
   ret = i2c_master_write_byte(cmd, MAX30100_ADDR << 1 | mode, ACK_CHECK_EN);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("%d\n", ret);
   printf("Sending reg_address: ");
 #endif
 
   ret = i2c_master_write_byte(cmd, reg_address, ACK_CHECK_EN);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("%d\n", ret);
 #endif
 
@@ -100,7 +100,7 @@ esp_err_t max30100_stop(i2c_cmd_handle_t cmd) {
   i2c_master_stop(cmd);
   ret = i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Sent queued commands: %d\n", ret);
 #endif
 
@@ -136,13 +136,13 @@ esp_err_t max30100_read_byte(uint8_t read_reg, uint8_t *data) {
   cmd = max30100_start(read_reg, WRITE_BIT);
   ret = max30100_repeat_start(&cmd);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Read byte repeat start: %d\n", ret);
 #endif
 
   ret = i2c_master_read(cmd, data, 1, LAST_NACK_VAL);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Read byte master read: %d -> %d\n", *data, ret);
 #endif
 
@@ -172,13 +172,13 @@ esp_err_t max30100_write(uint8_t write_reg, uint8_t *data, size_t data_len) {
   esp_err_t ret;
   i2c_cmd_handle_t cmd = max30100_start(write_reg, WRITE_BIT);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Writing data: ");
 #endif
 
   ret = i2c_master_write(cmd, data, data_len, LAST_NACK_VAL);
 
-#if defined(DEBUG) && defined(DEBUG_I2C)
+#if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("%d\n", ret);
   printf("Stopping\n");
 #endif
@@ -199,7 +199,7 @@ esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
 
   *data_len = NUM_SAMPLES_TO_READ;
 
-#if defined(DEBUG) && defined(DEBUG_FIFO)
+#if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Write\\read fifo:%d \t%d\n", write_data, read_data);
   printf("NUM SAMPLES: %d\n", NUM_SAMPLES_TO_READ);
 #endif
@@ -213,7 +213,7 @@ esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
   cmd = max30100_start(MAX30100_REG_FIFO_DATA, WRITE_BIT);
   ret = max30100_repeat_start(&cmd);
 
-#if defined(DEBUG) && defined(DEBUG_FIFO)
+#if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Reading FIFO\n");
 #endif
 
@@ -234,12 +234,12 @@ esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
 
     i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
 
-#if defined(DEBUG) && defined(DEBUG_FIFO)
+#if defined(_DEBUG_) && defined(DEBUG_FIFO)
     printf("IR[%d]: %d\tRED[%d]: %d\n", i, ir_data[i], i, red_data[i]);
 #endif
   }
 
-#if defined(DEBUG) && defined(DEBUG_FIFO)
+#if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Read fifo data length: %d\n", *data_len);
 #endif
 
@@ -251,7 +251,7 @@ esp_err_t max30100_update(uint16_t *ir_data, uint16_t *red_data,
                           size_t *data_len) {
   max30100_read_fifo(ir_data, red_data, data_len);
 
-#if defined(DEBUG) && defined(DEBUG_FIFO)
+#if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Updated data length: %d\n", *data_len);
 #endif
 
@@ -322,7 +322,7 @@ void max30100_adjust_current() {
   max30100_write_byte(MAX30100_REG_LED_CONFIGURATION,
                       red_current << 4 | led_conf);
 
-#ifdef DEBUG
+#ifdef _DEBUG_
   printf("I: %d\n", red_current);
 #endif
 }
@@ -347,7 +347,7 @@ float step(float dcw, float x) {
   return dcw - olddcw;
 }
 void max30100_set_led_width(uint8_t led_pulse_width) {
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting led pulse width: %d\n", led_pulse_width);
 #endif
   uint8_t previous;
@@ -355,20 +355,20 @@ void max30100_set_led_width(uint8_t led_pulse_width) {
 
   ret = max30100_read_byte(MAX30100_REG_SPO2_CONFIGURATION, &previous);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Led pulse width read config: %x -> %d\n", previous, ret);
 #endif
 
   ret = max30100_write_byte(MAX30100_REG_SPO2_CONFIGURATION,
                             (previous & 0xfc) | led_pulse_width);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Led pulse width write: %d\n", ret);
 #endif
 }
 
 void max30100_set_sampling(uint8_t sampling_rate) {
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting sampling rate: %d\n", sampling_rate);
 #endif
 
@@ -376,27 +376,27 @@ void max30100_set_sampling(uint8_t sampling_rate) {
   esp_err_t ret;
   ret = max30100_read_byte(MAX30100_REG_SPO2_CONFIGURATION, &previous);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Sampling rate reading conf:%x -> %d\n", previous, ret);
 #endif
 
   ret = max30100_write_byte(MAX30100_REG_SPO2_CONFIGURATION,
                             (previous & 0xe3) | (sampling_rate << 2));
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Sampling rate write: %d\n", ret);
 #endif
 }
 
 void max30100_set_highres(uint8_t enabled) {
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting High resolution mode: %d\n", enabled);
 #endif
   uint8_t previous;
   esp_err_t ret;
 
   ret = max30100_read_byte(MAX30100_REG_SPO2_CONFIGURATION, &previous);
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Reading previous conf:%x -> %d\n", previous, ret);
 #endif
 
@@ -404,7 +404,7 @@ void max30100_set_highres(uint8_t enabled) {
       enabled ? MAX30100_SPC_SPO2_HI_RES_EN : ~MAX30100_SPC_SPO2_HI_RES_EN;
   ret = max30100_write_byte(MAX30100_REG_SPO2_CONFIGURATION, previous | mode);
 
-#if defined(DEBUG) && defined(DEBUG_INIT)
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
   printf("Setting mode: %x -> %d\n", enabled, ret);
 #endif
 }
