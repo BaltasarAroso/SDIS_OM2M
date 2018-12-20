@@ -81,7 +81,10 @@ public class RestHttpClient {
                 httpResponse.setBody(EntityUtils.toString(closeableHttpResponse.getEntity()));
                 HttpEntity entityHTTP = closeableHttpResponse.getEntity();
                 EntityUtils.consume(entityHTTP);
+            } catch (Exception e) {
+                e.printStackTrace();
             } finally {
+                System.out.println("debug status: " + httpResponse.getStatusCode());
                 closeableHttpResponse.close();
             }
         } catch (Exception e) {

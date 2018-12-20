@@ -43,7 +43,7 @@ public class M2MApp {
 
     private static String originator = "admin:admin";
     private static String cseProtocol = "http";
-    private static String cseIp = "10.227.144.30";
+    private static String cseIp = "192.168.137.88";
     private static int csePort = 8080;
     private static String cseId = "in-cse";
     private static String cseName = "dartes";
@@ -59,7 +59,7 @@ public class M2MApp {
 
     private static String aeMonitorName = "mymonitor";
     private static String aeProtocol = "http";
-    private static String aeIp = "10.227.144.30";
+    private static String aeIp = "192.168.137.1";
     private static int aePort = 1600;
     private static String subName = "monitorsub";
     private static String targetCse = "in-cse/dartes";
@@ -93,7 +93,7 @@ public class M2MApp {
         //create more threads for receptions...
         notService = Executors.newFixedThreadPool(numberThreads * 10);
 
-        System.out.println("start server");
+        System.out.print("Starting server... ");
 
         server = null;
         try {
@@ -104,6 +104,8 @@ public class M2MApp {
         server.createContext("/", new MyHandlerM2M());
         server.setExecutor(notService);
         server.start();
+
+        System.out.println("started.");
     }
 
 
@@ -224,6 +226,8 @@ public class M2MApp {
      * @return HTTPResponse
      */
     public void createMonitor() {
+        System.out.print("Creating Monitor... ");
+
         JSONArray array = new JSONArray();
         array.put(appPoa);
         JSONObject obj = new JSONObject();
@@ -244,8 +248,10 @@ public class M2MApp {
         JSONObject sub = new JSONObject();
         sub.put("m2m:sub", obj2);
         //HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa+"/~/"+targetCse+"/"+aeName+"/"+cntName, sub.toString(), 23);
-        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/esp_pub/HR", sub.toString(), 23);
+//        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/esp_pub/HR", sub.toString(), 23);
+        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/ESP8266/HR", sub.toString(), 23);
 
+        System.out.println("created");
     }
 
     /**
@@ -255,13 +261,17 @@ public class M2MApp {
      * @param appId         application
      */
     public void createApplication(String applicationId, int appId) {
+        System.out.print("Creating Application... ");
+
         JSONObject obj = new JSONObject();
         obj.put("rn", applicationId);
         obj.put("api", appId);
         obj.put("rr", false);
         JSONObject resource = new JSONObject();
         resource.put("m2m:ae", obj);
-        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, resource.toString(), 2);
+//        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, resource.toString(), 2);
+
+        System.out.println("created.");
     }
 
     /**
@@ -271,11 +281,15 @@ public class M2MApp {
      */
     public void createContainer(String aeName, String containerId) {
 
+        System.out.print("Creating Container... ");
+
         JSONObject obj = new JSONObject();
         obj.put("rn", containerId);
         JSONObject resource = new JSONObject();
         resource.put("m2m:cnt", obj);
         RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName, resource.toString(), 3);
+
+        System.out.println("created.");
     }
 
 
@@ -289,6 +303,8 @@ public class M2MApp {
      */
     public void createContentInstance(String data, String aeName, String containerId, String contentInstanceId) {
 
+        System.out.print("Creating Content Instance... ");
+
         JSONObject obj = new JSONObject();
         obj.put("rn", contentInstanceId);
         obj.put("pc", "cenas_teste");
@@ -298,7 +314,8 @@ public class M2MApp {
         resource.put("m2m:cin", obj);
 
         HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName + "/" + containerId, resource.toString(), 4);
-        //System.out.println("Status: " + httpResponse.getStatusCode());
+        System.out.print("created. ");
+        System.out.println("Content Instance response status: " + httpResponse.getStatusCode());
 
     }
 

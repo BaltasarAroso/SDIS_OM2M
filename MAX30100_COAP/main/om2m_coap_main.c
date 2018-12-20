@@ -18,7 +18,7 @@
 #include "om2m_coap_config.h"
 
 #define COAP_SERVER_PORT 5683
-//#define TESTE_PUBLISH
+#define TESTE_PUBLISH
 
 unsigned int wait_seconds = 90; /* default timeout in seconds */
 coap_tick_t max_wait;           /* global timeout (changed by set_timeout()) */
