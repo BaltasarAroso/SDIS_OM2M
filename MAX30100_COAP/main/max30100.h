@@ -63,12 +63,11 @@
 #define MAX30100_IE_ENB_TEMP_RDY (1 << 6)
 #define MAX30100_IE_ENB_A_FULL (1 << 7)
 
-//#define DEBUG
-#define DEBUG_I2C
-#define DEBUG_INIT
-#define DEBUG_TEST
+//#define DEBUG_I2C
+//#define DEBUG_INIT
+//#define DEBUG_TEST
 #define DEBUG_FIFO
-#define _DEBUG_
+//#define _DEBUG_
 
 #define MAX30100_MODE_HRONLY 0x02   // Heart rate only
 #define MAX30100_MODE_SPO2_HR 0x03  // Enable SpO2 monitor

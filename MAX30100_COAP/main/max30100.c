@@ -196,7 +196,6 @@ esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
   max30100_read_byte(MAX30100_REG_FIFO_WRITE, &write_data);
   max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
   NUM_SAMPLES_TO_READ = (write_data - read_data) & (MAX30100_FIFO_DEPTH - 1);
-
   *data_len = NUM_SAMPLES_TO_READ;
 
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
@@ -322,7 +321,7 @@ void max30100_adjust_current() {
   max30100_write_byte(MAX30100_REG_LED_CONFIGURATION,
                       red_current << 4 | led_conf);
 
-#ifdef _DEBUG_
+#if defined(DEBUG) && defined(DEBUG_I2C)
   printf("I: %d\n", red_current);
 #endif
 }

@@ -1,5 +1,5 @@
-#define WIFI_SSID "iPhone Baltasar"
-#define WIFI_PASS "12345679"
+#define WIFI_SSID "boas"
+#define WIFI_PASS "123123123"
 
 #define COAP_DEFAULT_TIME_SEC 5
 #define COAP_DEFAULT_TIME_USEC 0

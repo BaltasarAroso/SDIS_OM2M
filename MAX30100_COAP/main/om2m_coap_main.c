@@ -18,6 +18,7 @@
 #include "om2m_coap_config.h"
 
 #define COAP_SERVER_PORT 5683
+//#define TESTE_PUBLISH
 
 unsigned int wait_seconds = 90; /* default timeout in seconds */
 coap_tick_t max_wait;           /* global timeout (changed by set_timeout()) */
@@ -68,7 +69,7 @@ static void message_handler(struct coap_context_t *ctx,
                             coap_pdu_t *received, const coap_tid_t id) {
   unsigned char *data = NULL;
   size_t data_len;
-  if (COAP_RESPONSE_CLASS(received->hdr->code) == 2) {
+  if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_200) {
     if (coap_get_data(received, &data_len, &data)) {
       printf("Received: %s\n", data);
     }
@@ -275,21 +276,31 @@ static void om2m_coap_client_task(void *pvParameters) {
     char con[85] = {"73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s"};
 #endif
   char name[50];
+#ifdef TESTE_PUBLISH
+  char data[] = "COMUNICATION TESTE";
+#else
   char data[6];
+#endif
   int i = 0;
   unsigned short msg_id = 0;
+  data_len = 1;
 
   ESP_LOGI(TAG, "Starting publish");
   while (1) {
-    sprintf(name, "%d", i);
-    sprintf(data, "%d", ir_buffer[0]);
+#ifndef TESTE_PUBLISH
+    if (data_len) {
+      sprintf(data, "%d", ir_buffer[0]);
+#endif
+      sprintf(name, "%d", i);
+      printf("Name: %s\n", name);
+      printf("Data to send: %s\n", data);
 
-    printf("Name: %s\n", name);
-    printf("Data to send: %s\n", data);
-    om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
-                                      name, data, &msg_id, COAP_REQUEST_POST);
-    i++;
-
+      om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
+                                        name, data, &msg_id, COAP_REQUEST_POST);
+      i++;
+#ifndef TESTE_PUBLISH
+    }
+#endif
     vTaskDelay(1000 / portTICK_RATE_MS);
   }
 
