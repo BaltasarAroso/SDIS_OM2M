@@ -26,8 +26,7 @@ public class M2MApp {
     public static M2MApp instance = null;
     private static ExecutorService notService;
 
-    public static String filesFolder = "C:\\Users\\Andre\\Escola\\feup\\5_ano\\1_sem\\SDIS\\project\\files_folder";
-
+    public static String filesFolder = System.getProperty("user.dir");
 
     public static int numberThreads = 1;
     public static int frequency = 100;
@@ -43,10 +42,10 @@ public class M2MApp {
 
     private static String originator = "admin:admin";
     private static String cseProtocol = "http";
-    private static String cseIp = "192.168.137.88";
+    private static String cseIp = "192.168.137.1";
     private static int csePort = 8080;
     private static String cseId = "in-cse";
-    private static String cseName = "dartes";
+    //private static String cseName = "dartes";
 
     private static String aeNamePub = "pc_pub";
     private static int appPubId = 12345;
@@ -57,12 +56,13 @@ public class M2MApp {
     private static String cntNamePub = "HR";
     private static String cntNameMaster = "ctrlcmd";
 
-    private static String aeMonitorName = "mymonitor";
+    private static String aeMonitorName = "Monitor";
     private static String aeProtocol = "http";
-    private static String aeIp = "192.168.137.1";
+    private static String aeIp = "192.168.137.110";
     private static int aePort = 1600;
-    private static String subName = "monitorsub";
-    private static String targetCse = "in-cse/dartes";
+    private static String subName = "AESub";
+    private static String targetCse = "in-cse";
+    private static String AeName = "ESP8266";
 
 
     private static String csePoa = cseProtocol + "://" + cseIp + ":" + csePort;
@@ -226,8 +226,8 @@ public class M2MApp {
      * @return HTTPResponse
      */
     public void createMonitor() {
+    	
         System.out.print("Creating Monitor... ");
-
         JSONArray array = new JSONArray();
         array.put(appPoa);
         JSONObject obj = new JSONObject();
@@ -237,10 +237,11 @@ public class M2MApp {
         obj.put("poa", array);
         JSONObject ae = new JSONObject();
         ae.put("m2m:ae", obj);
-        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
+        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + AeName, ae.toString(), 2);
 
+        System.out.print("Subscribing to sensor data... ");
         JSONArray array2 = new JSONArray();
-        array2.put("/" + cseId + "/" + cseName + "/" + aeMonitorName);
+        array2.put("/" + cseId + "/" + AeName + "/" + aeMonitorName);
         JSONObject obj2 = new JSONObject();
         obj2.put("nu", array2);
         obj2.put("rn", subName);
@@ -249,13 +250,13 @@ public class M2MApp {
         sub.put("m2m:sub", obj2);
         //HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa+"/~/"+targetCse+"/"+aeName+"/"+cntName, sub.toString(), 23);
 //        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/esp_pub/HR", sub.toString(), 23);
-        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/ESP8266/HR", sub.toString(), 23);
+        HttpResponse httpResponseSub = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/" + AeName + "/HR", sub.toString(), 23);
 
         System.out.println("created");
     }
 
     /**
-     * Creates a new application
+     * Creates a new application 
      *
      * @param applicationId application
      * @param appId         application
@@ -287,7 +288,7 @@ public class M2MApp {
         obj.put("rn", containerId);
         JSONObject resource = new JSONObject();
         resource.put("m2m:cnt", obj);
-        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName, resource.toString(), 3);
+        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + aeName, resource.toString(), 3);
 
         System.out.println("created.");
     }
@@ -313,7 +314,7 @@ public class M2MApp {
         JSONObject resource = new JSONObject();
         resource.put("m2m:cin", obj);
 
-        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName + "/" + aeName + "/" + containerId, resource.toString(), 4);
+        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + aeName + "/" + containerId, resource.toString(), 4);
         System.out.print("created. ");
         System.out.println("Content Instance response status: " + httpResponse.getStatusCode());
 
@@ -348,6 +349,9 @@ public class M2MApp {
 
 
     public static void main(String[] args) throws IOException, InterruptedException {
+    	
+    	System.out.println("Working Directory = " +
+                System.getProperty("user.dir"));
 
         if (args.length == 3) {
             try {

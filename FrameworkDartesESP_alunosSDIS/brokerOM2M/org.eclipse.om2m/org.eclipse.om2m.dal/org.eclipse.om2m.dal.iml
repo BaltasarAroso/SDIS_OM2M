@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="EclipseModuleManager">
+    <libelement value="jar://$MODULE_DIR$/libs/osgi.residential-6.0.0.jar!/" />
+    <src_description expected_position="0" />
+  </component>
+  <component name="NewModuleRootManager">
+    <output url="file://$MODULE_DIR$/target/classes" />
+    <exclude-output />
+    <content url="file://$MODULE_DIR$" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="jdk" jdkName="JavaSE-1.7" jdkType="JavaSDK" />
+    <orderEntry type="library" name="ECLIPSE" level="application" />
+    <orderEntry type="module-library" exported="">
+      <library name="osgi.residential-6.0.0.jar">
+        <CLASSES>
+          <root url="jar://$MODULE_DIR$/libs/osgi.residential-6.0.0.jar!/" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES />
+      </library>
+    </orderEntry>
+  </component>
+</module>
