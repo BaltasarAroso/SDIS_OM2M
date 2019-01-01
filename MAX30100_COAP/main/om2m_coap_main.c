@@ -19,6 +19,9 @@
 
 #define COAP_SERVER_PORT 5683
 #define TESTE_PUBLISH
+#define TESTE_SUB_PUB
+#define DEBUG_COAP
+#define TESTING
 
 unsigned int wait_seconds = 90; /* default timeout in seconds */
 coap_tick_t max_wait;           /* global timeout (changed by set_timeout()) */
@@ -208,8 +211,6 @@ static void coap_context_handler(void *pvParameters)
 }
 static void om2m_coap_client_task(void *pvParameters)
 {
-  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, MONITOR, SUB);
-
 #if 0
     coap_queue_t *node;
     node = coap_new_node();
@@ -270,7 +271,8 @@ static void om2m_coap_client_task(void *pvParameters)
     vTaskDelay(2000 / portTICK_RATE_MS);
   }
   MESSAGE_OK = BIT0;
-
+  
+  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, MONITOR, SUB);
 #if 0
     int k = 0;
     while (k++ == 20) vTaskDelay(1000 / portTICK_RATE_MS);
@@ -291,7 +293,10 @@ static void om2m_coap_client_task(void *pvParameters)
     char con[85] = {"73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s"};
 #endif
   char name[50];
-#ifdef TESTE_PUBLISH
+#if defined(TESTING) && defined(TESTE_SUB_PUB)
+  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, "HR", MONITOR, SUB);
+#endif
+#if defined(TESTING) && defined(TESTE_PUBLISH)
   char data[] = "COMUNICATION TESTE";
 #else
   char data[6];
@@ -301,9 +306,11 @@ static void om2m_coap_client_task(void *pvParameters)
   data_len = 1;
 
   ESP_LOGI(TAG, "Starting publish");
+#if ! (defined(TESTING) && defined(TESTE_SUB_PUB))
   while (1)
   {
-#ifndef TESTE_PUBLISH
+#endif
+#if ! (defined(TESTING) && defined(TESTE_PUBLISH))
     if (data_len)
     {
       sprintf(data, "%d", ir_buffer[0]);
@@ -315,12 +322,15 @@ static void om2m_coap_client_task(void *pvParameters)
       om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
                                         name, data, &msg_id, COAP_REQUEST_POST);
       i++;
-#ifndef TESTE_PUBLISH
+#if ! (defined(TESTING) && defined(TESTE_PUBLISH))
     }
 #endif
     vTaskDelay(1000 / portTICK_RATE_MS);
+#if !(defined(TESTING) && defined(TESTE_SUB_PUB))
   }
-
+#else
+  while(1) vTaskDelay(1000/portTICK_RATE_MS);
+#endif 
   vTaskDelete(NULL);
 }
 
@@ -372,7 +382,7 @@ static void wifi_conn_init(void)
 }
 static void init_coap(void)
 {
-#if defined(DEBUG_COAP)
+#if defined(TESTING) && defined(DEBUG_COAP)
   printf("COAP_RESPONSE_200: %d\n", COAP_RESPONSE_CODE(200));
   printf("COAP_RESPONSE_201: %d\n", COAP_RESPONSE_CODE(201));
   printf("COAP_RESPONSE_304: %d\n", COAP_RESPONSE_CODE(304));
