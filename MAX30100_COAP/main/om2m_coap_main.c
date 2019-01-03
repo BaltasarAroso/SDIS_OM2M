@@ -16,6 +16,7 @@
 
 #include "max30100.h"
 #include "om2m_coap_config.h"
+#include "cJSON.h"
 
 #define COAP_SERVER_PORT 5683
 #define TESTE_PUBLISH
@@ -41,17 +42,73 @@ uint16_t ir_buffer[MAX30100_FIFO_DEPTH];
 uint16_t red_buffer[MAX30100_FIFO_DEPTH];
 size_t data_len;
 
-static EventGroupHandle_t wifi_event_group;
+static EventGroupHandle_t coap_group;
 coap_context_t *ctx = NULL;
 coap_address_t dst_addr, src_addr;
+char aei[50], cntid[50];
 
 /* The event group allows multiple bits for each event,
    but we only care about one event - are we connected
    to the AP with an IP? */
 const static int CONNECTED_BIT = BIT0;
-unsigned int MESSAGE_OK = BIT0;
+unsigned int AE_BIT = BIT1;
+unsigned int CNT_BIT = BIT2;
 
 const static char *TAG = "coap_om2m_client";
+static void create_ae(void);
+static void create_container(void);
+
+#if 1
+int coap_request_resource(coap_context_t *ctx, coap_address_t dst_addr, const char *resource_name,int id)
+{
+  int rc = -1;
+  char *out = NULL;
+  char uri[50], originator[50],poa_url[50];
+  unsigned char content_format[2], accept[2], type[2];
+  /*FIX THIS*/
+  unsigned char token[] = {"fd22"};
+  tcpip_adapter_ip_info_t local_ip;
+  coap_pdu_t *request = NULL;
+  cJSON *payload = NULL, *ae = NULL, *poa_array = NULL;
+
+  tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &local_ip);
+  sprintf(uri, "~/in-cse");
+  sprintf(originator, "%s", CSE_ORIGINATOR);
+  sprintf(poa_url, "coap://"IPSTR":95",IP2STR(&local_ip.ip));
+
+   //create JSON payload
+  payload = cJSON_CreateObject();
+  poa_array = cJSON_CreateArray();
+  cJSON_AddItemToArray(poa_array, cJSON_CreateString(poa_url));
+  cJSON_AddItemToObject(payload, "m2m:ae", ae = cJSON_CreateObject());
+  cJSON_AddStringToObject(ae, "rn", resource_name);
+  cJSON_AddItemToObject(ae, "poa", poa_array);
+  out = cJSON_PrintUnformatted(payload);
+  cJSON_Delete(poa_array);
+  cJSON_Delete(payload);
+
+  //create and send CoAP request
+  request = coap_new_pdu();
+  request->hdr->type = COAP_MESSAGE_NON;
+  request->hdr->id = coap_new_message_id(ctx);
+  request->hdr->code = COAP_REQUEST_GET;
+  coap_add_token(request, sizeof(token), token);
+  coap_add_option(request, COAP_OPTION_URI_PATH, strlen(uri), (unsigned char *)uri);
+  coap_add_option(request, COAP_OPTION_CONTENT_FORMAT, coap_encode_var_bytes(content_format, COAP_MEDIATYPE_APPLICATION_JSON), content_format);
+  coap_add_option(request, COAP_OPTION_ACCEPT, coap_encode_var_bytes(accept, COAP_MEDIATYPE_APPLICATION_JSON), accept);
+  coap_add_option(request, ONEM2M_OPTION_FR, strlen(originator), (unsigned char *)originator);
+  coap_add_option(request, ONEM2M_OPTION_TY, coap_encode_var_bytes(type, 2), (unsigned char *)type);
+  coap_add_data(request, strlen(out), (unsigned char*)out);
+  if (request->hdr->type == COAP_MESSAGE_CON)
+    rc = coap_send_confirmed(ctx, ctx->endpoint, &dst_addr, request);
+  else
+    rc = coap_send(ctx, ctx->endpoint, &dst_addr, request);
+
+  coap_delete_pdu(request);
+  free(out);
+  return rc;
+}
+#endif
 
 void adjust_current()
 {
@@ -79,24 +136,103 @@ static void message_handler(struct coap_context_t *ctx,
                             const coap_address_t *remote, coap_pdu_t *sent,
                             coap_pdu_t *received, const coap_tid_t id)
 {
-  unsigned char *data = NULL;
+  char *data = NULL;
   size_t data_len;
   int has_data = coap_get_data(received, &data_len, &data);
 
-  MESSAGE_OK = BIT0;
 #if defined(DEBUG_COAP)
-  printf("Response code received: %d\n", received->hdr->code);
+  printf("Response class received: %d\n", COAP_RESPONSE_CLASS(received->hdr->code));
+  printf("Response Code: %d\n", received->hdr->code);
   if (has_data)
     printf("Received: %s\n", data);
 #endif
-  if (received->hdr->code != COAP_RESPONSE_404)
+  if (!(xEventGroupGetBits(coap_group) & AE_BIT))
   {
-    MESSAGE_OK = BIT1;
-    if (has_data)
-      printf("Received: %s\n", data);
+    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
+    { // 20* AE created
+      if (has_data)
+      {
+        cJSON *response = cJSON_Parse(data);
+        if (!response)
+          return;
+
+        cJSON *m2mae = cJSON_GetObjectItem(response, "m2m:ae");
+        cJSON_Delete(response);
+
+        if (!m2mae)
+          return;
+
+        cJSON *aeiJSON = cJSON_GetObjectItem(m2mae, "aei");
+        cJSON_Delete(m2mae);
+
+        if (!aeiJSON)
+          return;
+        char *aux;
+        if ((aux = cJSON_GetStringValue(aeiJSON))){
+          sprintf(aei, "%s", aux);
+          printf("AE ID received: %s\n", aei);
+        }
+        cJSON_Delete(aeiJSON);
+        free(aux);
+
+        xEventGroupSetBits(coap_group, AE_BIT); // AE created
+      }
+      return;
+    }
+    else if (received->hdr->code == COAP_RESPONSE_CODE(403))
+      {
+        printf("AE already present, requesting\n");
+        coap_request_resource(ctx, dst_addr, "", 8989);
+      }
     return;
   }
-  MESSAGE_OK = BIT0;
+  else if (!(xEventGroupGetBits(coap_group) & CNT_BIT))
+  {
+    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
+    { // 20* Container created
+      if (has_data)
+      {
+        cJSON *response = cJSON_Parse(data);
+        if (!response)
+          return;
+        cJSON *m2mcnt = cJSON_GetObjectItem(response, "m2m:cnt");
+        cJSON_Delete(response);
+
+        if (!m2mcnt)
+          return;
+
+        cJSON *riJSON = cJSON_GetObjectItem(m2mcnt, "ri");
+        cJSON_Delete(m2mcnt);
+
+        if (!riJSON)
+          return;
+
+        char *aux;
+        if ((aux = cJSON_GetStringValue(riJSON)))
+        {
+          aux++;
+          while (aux && *aux != '/')
+            aux++;
+          aux++;
+          sprintf(cntid, "%s", aux);
+          printf("CNT ID received: %s\n", cntid);
+        }
+        cJSON_Delete(riJSON);
+        free(aux);
+
+        xEventGroupSetBits(coap_group, CNT_BIT); // AE created
+      }
+      return;
+    }
+  }
+  else
+  {
+    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
+    { // Published
+    }
+    if (has_data)
+      printf(data);
+  }
 }
 #if 0
 static void coap_retransmition_handler(void *pvParameters) {
@@ -211,90 +347,21 @@ static void coap_context_handler(void *pvParameters)
 }
 static void om2m_coap_client_task(void *pvParameters)
 {
-#if 0
-    coap_queue_t *node;
-    node = coap_new_node();
-    coap_pdu_t *request = NULL;
-    request = coap_new_pdu();
-    request->hdr->type = COAP_MESSAGE_TYPE_RQST;
-    request->hdr->id   = 5;
-    request->hdr->code = COAP_REQUEST_POST;
-    node->pdu = request;
-    node->t = 1000;
-    //coap_insert_node(&ctx->sendqueue, node);
-    coap_send_confirmed(ctx, ctx->endpoint, &dst_addr, request);
-    vTaskDelay(1000/portTICK_RATE_MS);
+  create_ae();
+  xEventGroupWaitBits(coap_group, AE_BIT, false, true, portMAX_DELAY);
+  create_container();
 
-    coap_queue_t *node2;
-    node2 = coap_new_node();
-    coap_pdu_t *request2 = NULL;
-    request2 = coap_new_pdu();
-    request2->hdr->type = COAP_MESSAGE_TYPE_RQST;
-    request2->hdr->id   = 6;
-    request2->hdr->code = COAP_REQUEST_POST;
-    node2->pdu = request2;
-    node2->t = 100;
-    //coap_insert_node(&ctx->sendqueue, node2);
-    coap_send_confirmed(ctx, ctx->endpoint, &dst_addr, request2);
-      vTaskDelay(1000/portTICK_RATE_MS);
+  printf("Waiting for AE and Container creation\n");
+  xEventGroupWaitBits(coap_group, CNT_BIT, false, true, portMAX_DELAY);
 
-    coap_queue_t *node3;
-    node3 = coap_new_node();
-    coap_pdu_t *request3 = NULL;
-    request3 = coap_new_pdu();
-    request3->hdr->type = COAP_MESSAGE_TYPE_RQST;
-    request3->hdr->id   = 2;
-    request3->hdr->code = COAP_REQUEST_POST;
-    node3->pdu = request3;
-    node3->t = 200;
-    //coap_insert_node(&ctx->sendqueue, node3);
-    coap_send_confirmed(ctx, ctx->endpoint, &dst_addr, request3);
-    vTaskDelay(1000/portTICK_RATE_MS);*/
-
-    while(1) {
-
-     vTaskDelay(1000/portTICK_RATE_MS);//
-   }
-#endif
-  while (MESSAGE_OK == BIT0)
-  {
-    ESP_LOGI(TAG, "Creating AE %s", AE_NAME);
-    om2m_coap_create_ae(ctx, dst_addr, AE_NAME, 8989);
-    vTaskDelay(2000 / portTICK_RATE_MS);
-  }
-
-  MESSAGE_OK = BIT0;
-  while (MESSAGE_OK == BIT0)
-  {
-    ESP_LOGI(TAG, "Creating publish container %s", CONTAINER_NAME);
-    om2m_coap_create_container(ctx, dst_addr, AE_NAME, CONTAINER_NAME);
-    vTaskDelay(2000 / portTICK_RATE_MS);
-  }
-  MESSAGE_OK = BIT0;
-  
-  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, MONITOR, SUB);
-#if 0
-    int k = 0;
-    while (k++ == 20) vTaskDelay(1000 / portTICK_RATE_MS);
-
-    printf("MIN_MODEM!\n");
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
-    vTaskDelay(20000 / portTICK_RATE_MS);
-    printf("NONE!\n");
-
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
-
-    while (1)
-    {
-      vTaskDelay(10000 / portTICK_RATE_MS);
-    }
-    //om2m_coap_create_subscription(ctx, dst_addr, "esp_pub", "HR", "esp_sub", "sub");
-    int i = 0;
-    char con[85] = {"73hdjetyru4682jeir638rnforte63uwir6390kmgsi2538endi84jdo7svcndghlduyduedsr353wefds43s"};
-#endif
+  printf("AE %s and Container %s created\n", AE_NAME, CONTAINER_NAME);
   char name[50];
+#if 1
 #if defined(TESTING) && defined(TESTE_SUB_PUB)
   om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, "HR", MONITOR, SUB);
+#else
+  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, MONITOR, SUB);
+#endif
 #endif
 #if defined(TESTING) && defined(TESTE_PUBLISH)
   char data[] = "COMUNICATION TESTE";
@@ -302,35 +369,25 @@ static void om2m_coap_client_task(void *pvParameters)
   char data[6];
 #endif
   int i = 0;
-  unsigned short msg_id = 0;
-  data_len = 1;
-
-  ESP_LOGI(TAG, "Starting publish");
-#if ! (defined(TESTING) && defined(TESTE_SUB_PUB))
+  unsigned short int msg_id = 0;
   while (1)
   {
-#endif
-#if ! (defined(TESTING) && defined(TESTE_PUBLISH))
+#if !(defined(TESTING) && defined(TESTE_PUBLISH))
     if (data_len)
-    {
       sprintf(data, "%d", ir_buffer[0]);
 #endif
-      sprintf(name, "%d", i);
-      printf("Name: %s\n", name);
-      printf("Data to send: %s\n", data);
+    sprintf(name, "%d", i);
+    printf("Name: %s\n", name);
+    printf("Data to send: %s\n", data);
 
-      om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
-                                        name, data, &msg_id, COAP_REQUEST_POST);
-      i++;
-#if ! (defined(TESTING) && defined(TESTE_PUBLISH))
-    }
-#endif
+    om2m_coap_create_content_instance(ctx, dst_addr, cntid, CONTAINER_NAME,
+                                      name, data, &msg_id, COAP_REQUEST_POST);
+    i++;
     vTaskDelay(1000 / portTICK_RATE_MS);
-#if !(defined(TESTING) && defined(TESTE_SUB_PUB))
   }
-#else
-  while(1) vTaskDelay(1000/portTICK_RATE_MS);
-#endif 
+  while (1)
+    vTaskDelay(1000 / portTICK_RATE_MS);
+
   vTaskDelete(NULL);
 }
 
@@ -342,13 +399,13 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
     esp_wifi_connect();
     break;
   case SYSTEM_EVENT_STA_GOT_IP:
-    xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+    xEventGroupSetBits(coap_group, CONNECTED_BIT);
     break;
   case SYSTEM_EVENT_STA_DISCONNECTED:
     /* This is a workaround as ESP32 WiFi libs don't currently
              auto-reassociate. */
     esp_wifi_connect();
-    xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+    xEventGroupClearBits(coap_group, CONNECTED_BIT);
     break;
   default:
     break;
@@ -359,7 +416,6 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 static void wifi_conn_init(void)
 {
   tcpip_adapter_init();
-  wifi_event_group = xEventGroupCreate();
   ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -380,6 +436,27 @@ static void wifi_conn_init(void)
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
 }
+
+static void create_ae(void)
+{
+  while (!(xEventGroupGetBits(coap_group) & AE_BIT))
+  {
+    ESP_LOGI(TAG, "Creating AE %s", AE_NAME);
+    om2m_coap_create_ae(ctx, dst_addr, AE_NAME, 8989);
+    vTaskDelay(3000 / portTICK_RATE_MS);
+  }
+}
+
+static void create_container(void)
+{
+  while (!(xEventGroupGetBits(coap_group) & CNT_BIT))
+  {
+    ESP_LOGI(TAG, "Creating publish container %s", CONTAINER_NAME);
+    om2m_coap_create_container(ctx, dst_addr, aei, CONTAINER_NAME);
+    vTaskDelay(3000 / portTICK_RATE_MS);
+  }
+}
+
 static void init_coap(void)
 {
 #if defined(TESTING) && defined(DEBUG_COAP)
@@ -399,7 +476,7 @@ static void init_coap(void)
   printf("COAP_RESPONSE_504: %d\n", COAP_RESPONSE_CODE(504));
 #endif
   // wait for AP connection
-  xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true,
+  xEventGroupWaitBits(coap_group, CONNECTED_BIT, false, true,
                       portMAX_DELAY);
   ESP_LOGI(TAG, "Connected to AP");
 
@@ -437,6 +514,7 @@ void app_main(void)
   max30100_get_id(&part);
   printf("Part id: %d\n", part);
 
+  coap_group = xEventGroupCreate();
   wifi_conn_init();
   init_coap();
 
