@@ -18,11 +18,16 @@
 #include "om2m_coap_config.h"
 #include "cJSON.h"
 
+#include <time.h>
+#include <stdlib.h>
+
 #define COAP_SERVER_PORT 5683
 #define TESTE_PUBLISH
 #define TESTE_SUB_PUB
 #define DEBUG_COAP
 #define TESTING
+
+//TODO: Check publish responses to subscriber (wireshark)
 
 typedef struct
 {
@@ -60,6 +65,7 @@ const static int CONNECTED_BIT = BIT0;
 unsigned int AE_BIT = BIT1;
 unsigned int CNT_BIT = BIT2;
 unsigned int CTRL_BIT = BIT3;
+unsigned int SUB_BIT = BIT4;
 
 const static char *TAG = "coap_om2m_client";
 static void create_ae(void *pvParameters);
@@ -101,33 +107,34 @@ static void message_handler(struct coap_context_t *ctx,
   if (has_data)
     printf("Received: %s\n", data);
 #endif
+  printf("Bits: %d\n", (uint32_t)xEventGroupGetBits(coap_group));
   if (!(xEventGroupGetBits(coap_group) & AE_BIT))
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
-    {                                         // 20* AE created
+    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(201))
+    {                                         // not 40* -> AE created
       xEventGroupSetBits(coap_group, AE_BIT); // AE created
       return;
     }
   }
   else if (!(xEventGroupGetBits(coap_group) & CNT_BIT))
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
-    {                                          // 20* Container created
+    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(200))
+    {                                          // not 40* -> AE created
       xEventGroupSetBits(coap_group, CNT_BIT); // AE created
       return;
     }
   }
-  else if (!(xEventGroupGetBits(coap_group) & CTRL_BIT))
+  else if (!(xEventGroupGetBits(coap_group) & SUB_BIT))
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
-    {                                           // 20* Controller created
-      xEventGroupSetBits(coap_group, CTRL_BIT); // AE created
+    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(201))
+    {                                          // not 40* -> AE created
+      xEventGroupSetBits(coap_group, SUB_BIT); // AE created
       return;
     }
   }
   else
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
+    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_201))
     { // Published
     }
     if (has_data)
@@ -249,8 +256,7 @@ static void om2m_coap_client_task(void *pvParameters)
 {
   uri uri_ = {
       .entity = AE_NAME,
-      .container = CONTAINER_NAME
-  };
+      .container = CONTAINER_NAME};
 
   create_ae((void *)&uri_);
   xEventGroupWaitBits(coap_group, AE_BIT, false, true, portMAX_DELAY);
@@ -258,35 +264,47 @@ static void om2m_coap_client_task(void *pvParameters)
 
   create_container((void *)&uri_);
   xEventGroupWaitBits(coap_group, CNT_BIT, false, true, portMAX_DELAY);
+  xEventGroupClearBits(coap_group, CNT_BIT);
   printf("Container %s created\n", CONTAINER_NAME);
 
   uri_.container = ACTUATION;
   create_container((void *)&uri_);
-  xEventGroupWaitBits(coap_group, CTRL_BIT, false, true, portMAX_DELAY);
+  xEventGroupWaitBits(coap_group, CNT_BIT, false, true, portMAX_DELAY);
   printf("Controller %s created\n", ACTUATION);
+
+  uri_.entity = "Control";
+  xEventGroupClearBits(coap_group,AE_BIT);
+  create_ae((void *)&uri_);
+  xEventGroupWaitBits(coap_group, AE_BIT, false, true, portMAX_DELAY);
+  printf("AE %s created\n", uri_.entity);
 
   char name[50];
   /* TODO:
 
-  esp/dados node:publish pc:sub
-  esp/control pc:pub node:sub
+  *esp/dados node:publish pc:sub
+  *esp/control pc:pub node:sub
 
-  create ae pc_pub
-  create container pc_pub/hr
+  *create ae pc_pub
+  *create container pc_pub/hr
 
   create ae esp_sub
-
   create subscription esp_sub to pc_pub/hr
   */
-#if 0
-  ESP_LOGI(TAG, "Subscribing");
+  while (!(xEventGroupGetBits(coap_group) & SUB_BIT))
+  {
+#if 1
+    ESP_LOGI(TAG, "Subscribing");
 #if defined(TESTING) && defined(TESTE_SUB_PUB)
-  printf("Testing\n");
-  om2m_coap_create_subscription(ctx, dst_addr, aei, AE_NAME, CONTAINER_NAME, SUB);
+    printf("Testing\n");
+    om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, CONTAINER_NAME, "Control", SUB);
 #else
-  om2m_coap_create_subscription(ctx, dst_addr, aei, AE_NAME, MONITOR, SUB);
+    om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, AE_NAME, SUB);
 #endif
 #endif
+    vTaskDelay(3000 / portTICK_RATE_MS);
+  }
+  printf("Subscribed to %s\n", ACTUATION);
+
 #if 0
   while (1)
     vTaskDelay(1000 / portTICK_RATE_MS);
@@ -297,22 +315,22 @@ static void om2m_coap_client_task(void *pvParameters)
   char data[6];
 #endif
   int i = 0;
-  unsigned short int msg_id = 0;
-  while (1)
-  {
+  unsigned short int msg_id = rand();
+  // while (1)
+  // {
+  //TODO: Use wait bits for buffer data
 #if !(defined(TESTING) && defined(TESTE_PUBLISH))
-    if (data_len)
-      sprintf(data, "%d", ir_buffer[0]);
+  if (data_len)
+    sprintf(data, "%d", ir_buffer[0]);
 #endif
-    sprintf(name, "%d", i);
-    printf("Name: %s\n", name);
-    printf("Data to send: %s\n", data);
+  sprintf(name, "%d", msg_id);
+  printf("Name: %s\n", name);
+  printf("Data to send: %s\n", data);
 
-    om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
-                                      name, data, &msg_id, COAP_REQUEST_POST);
-    i++;
-    vTaskDelay(1000 / portTICK_RATE_MS);
-  }
+  om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
+                                    name, data, &i, COAP_REQUEST_POST);
+  vTaskDelay(1000 / portTICK_RATE_MS);
+  //}
   while (1)
     vTaskDelay(1000 / portTICK_RATE_MS);
 
@@ -441,9 +459,7 @@ void app_main(void)
   printf("Starting ESP\n");
   ESP_ERROR_CHECK(nvs_flash_init());
   max30100_init();
-  uint8_t part;
-  max30100_get_id(&part);
-  printf("Part id: %d\n", part);
+  srand(time(NULL)); // Initialization, should only be called once.
 
   coap_group = xEventGroupCreate();
   wifi_conn_init();
