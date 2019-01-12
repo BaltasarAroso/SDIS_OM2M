@@ -24,6 +24,12 @@
 #define DEBUG_COAP
 #define TESTING
 
+typedef struct
+{
+  char *entity;
+  char *container;
+} uri;
+
 unsigned int wait_seconds = 90; /* default timeout in seconds */
 coap_tick_t max_wait;           /* global timeout (changed by set_timeout()) */
 
@@ -53,62 +59,11 @@ char aei[50], cntid[50];
 const static int CONNECTED_BIT = BIT0;
 unsigned int AE_BIT = BIT1;
 unsigned int CNT_BIT = BIT2;
+unsigned int CTRL_BIT = BIT3;
 
 const static char *TAG = "coap_om2m_client";
-static void create_ae(void);
-static void create_container(void);
-
-#if 1
-int coap_request_resource(coap_context_t *ctx, coap_address_t dst_addr, const char *resource_name,int id)
-{
-  int rc = -1;
-  char *out = NULL;
-  char uri[50], originator[50],poa_url[50];
-  unsigned char content_format[2], accept[2], type[2];
-  /*FIX THIS*/
-  unsigned char token[] = {"fd22"};
-  tcpip_adapter_ip_info_t local_ip;
-  coap_pdu_t *request = NULL;
-  cJSON *payload = NULL, *ae = NULL, *poa_array = NULL;
-
-  tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &local_ip);
-  sprintf(uri, "~/in-cse");
-  sprintf(originator, "%s", CSE_ORIGINATOR);
-  sprintf(poa_url, "coap://"IPSTR":95",IP2STR(&local_ip.ip));
-
-   //create JSON payload
-  payload = cJSON_CreateObject();
-  poa_array = cJSON_CreateArray();
-  cJSON_AddItemToArray(poa_array, cJSON_CreateString(poa_url));
-  cJSON_AddItemToObject(payload, "m2m:ae", ae = cJSON_CreateObject());
-  cJSON_AddStringToObject(ae, "rn", resource_name);
-  cJSON_AddItemToObject(ae, "poa", poa_array);
-  out = cJSON_PrintUnformatted(payload);
-  cJSON_Delete(poa_array);
-  cJSON_Delete(payload);
-
-  //create and send CoAP request
-  request = coap_new_pdu();
-  request->hdr->type = COAP_MESSAGE_NON;
-  request->hdr->id = coap_new_message_id(ctx);
-  request->hdr->code = COAP_REQUEST_GET;
-  coap_add_token(request, sizeof(token), token);
-  coap_add_option(request, COAP_OPTION_URI_PATH, strlen(uri), (unsigned char *)uri);
-  coap_add_option(request, COAP_OPTION_CONTENT_FORMAT, coap_encode_var_bytes(content_format, COAP_MEDIATYPE_APPLICATION_JSON), content_format);
-  coap_add_option(request, COAP_OPTION_ACCEPT, coap_encode_var_bytes(accept, COAP_MEDIATYPE_APPLICATION_JSON), accept);
-  coap_add_option(request, ONEM2M_OPTION_FR, strlen(originator), (unsigned char *)originator);
-  coap_add_option(request, ONEM2M_OPTION_TY, coap_encode_var_bytes(type, 2), (unsigned char *)type);
-  coap_add_data(request, strlen(out), (unsigned char*)out);
-  if (request->hdr->type == COAP_MESSAGE_CON)
-    rc = coap_send_confirmed(ctx, ctx->endpoint, &dst_addr, request);
-  else
-    rc = coap_send(ctx, ctx->endpoint, &dst_addr, request);
-
-  coap_delete_pdu(request);
-  free(out);
-  return rc;
-}
-#endif
+static void create_ae(void *pvParameters);
+static void create_container(void *pvParameters);
 
 void adjust_current()
 {
@@ -148,80 +103,25 @@ static void message_handler(struct coap_context_t *ctx,
 #endif
   if (!(xEventGroupGetBits(coap_group) & AE_BIT))
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
-    { // 20* AE created
-      if (has_data)
-      {
-        cJSON *response = cJSON_Parse(data);
-        if (!response)
-          return;
-
-        cJSON *m2mae = cJSON_GetObjectItem(response, "m2m:ae");
-        cJSON_Delete(response);
-
-        if (!m2mae)
-          return;
-
-        cJSON *aeiJSON = cJSON_GetObjectItem(m2mae, "aei");
-        cJSON_Delete(m2mae);
-
-        if (!aeiJSON)
-          return;
-        char *aux;
-        if ((aux = cJSON_GetStringValue(aeiJSON))){
-          sprintf(aei, "%s", aux);
-          printf("AE ID received: %s\n", aei);
-        }
-        cJSON_Delete(aeiJSON);
-        free(aux);
-
-        xEventGroupSetBits(coap_group, AE_BIT); // AE created
-      }
+    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
+    {                                         // 20* AE created
+      xEventGroupSetBits(coap_group, AE_BIT); // AE created
       return;
     }
-    else if (received->hdr->code == COAP_RESPONSE_CODE(403))
-      {
-        printf("AE already present, requesting\n");
-        coap_request_resource(ctx, dst_addr, "", 8989);
-      }
-    return;
   }
   else if (!(xEventGroupGetBits(coap_group) & CNT_BIT))
   {
-    if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_200))
-    { // 20* Container created
-      if (has_data)
-      {
-        cJSON *response = cJSON_Parse(data);
-        if (!response)
-          return;
-        cJSON *m2mcnt = cJSON_GetObjectItem(response, "m2m:cnt");
-        cJSON_Delete(response);
-
-        if (!m2mcnt)
-          return;
-
-        cJSON *riJSON = cJSON_GetObjectItem(m2mcnt, "ri");
-        cJSON_Delete(m2mcnt);
-
-        if (!riJSON)
-          return;
-
-        char *aux;
-        if ((aux = cJSON_GetStringValue(riJSON)))
-        {
-          aux++;
-          while (aux && *aux != '/')
-            aux++;
-          aux++;
-          sprintf(cntid, "%s", aux);
-          printf("CNT ID received: %s\n", cntid);
-        }
-        cJSON_Delete(riJSON);
-        free(aux);
-
-        xEventGroupSetBits(coap_group, CNT_BIT); // AE created
-      }
+    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
+    {                                          // 20* Container created
+      xEventGroupSetBits(coap_group, CNT_BIT); // AE created
+      return;
+    }
+  }
+  else if (!(xEventGroupGetBits(coap_group) & CTRL_BIT))
+  {
+    if (COAP_RESPONSE_CLASS(received->hdr->code) != COAP_RESPONSE_CLASS(COAP_RESPONSE_404))
+    {                                           // 20* Controller created
+      xEventGroupSetBits(coap_group, CTRL_BIT); // AE created
       return;
     }
   }
@@ -347,21 +247,49 @@ static void coap_context_handler(void *pvParameters)
 }
 static void om2m_coap_client_task(void *pvParameters)
 {
-  create_ae();
+  uri uri_ = {
+      .entity = AE_NAME,
+      .container = CONTAINER_NAME
+  };
+
+  create_ae((void *)&uri_);
   xEventGroupWaitBits(coap_group, AE_BIT, false, true, portMAX_DELAY);
-  create_container();
+  printf("AE %s created\n", AE_NAME);
 
-  printf("Waiting for AE and Container creation\n");
+  create_container((void *)&uri_);
   xEventGroupWaitBits(coap_group, CNT_BIT, false, true, portMAX_DELAY);
+  printf("Container %s created\n", CONTAINER_NAME);
 
-  printf("AE %s and Container %s created\n", AE_NAME, CONTAINER_NAME);
+  uri_.container = ACTUATION;
+  create_container((void *)&uri_);
+  xEventGroupWaitBits(coap_group, CTRL_BIT, false, true, portMAX_DELAY);
+  printf("Controller %s created\n", ACTUATION);
+
   char name[50];
-#if 1
+  /* TODO:
+
+  esp/dados node:publish pc:sub
+  esp/control pc:pub node:sub
+
+  create ae pc_pub
+  create container pc_pub/hr
+
+  create ae esp_sub
+
+  create subscription esp_sub to pc_pub/hr
+  */
+#if 0
+  ESP_LOGI(TAG, "Subscribing");
 #if defined(TESTING) && defined(TESTE_SUB_PUB)
-  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, "HR", MONITOR, SUB);
+  printf("Testing\n");
+  om2m_coap_create_subscription(ctx, dst_addr, aei, AE_NAME, CONTAINER_NAME, SUB);
 #else
-  om2m_coap_create_subscription(ctx, dst_addr, AE_NAME, ACTUATION, MONITOR, SUB);
+  om2m_coap_create_subscription(ctx, dst_addr, aei, AE_NAME, MONITOR, SUB);
 #endif
+#endif
+#if 0
+  while (1)
+    vTaskDelay(1000 / portTICK_RATE_MS);
 #endif
 #if defined(TESTING) && defined(TESTE_PUBLISH)
   char data[] = "COMUNICATION TESTE";
@@ -380,7 +308,7 @@ static void om2m_coap_client_task(void *pvParameters)
     printf("Name: %s\n", name);
     printf("Data to send: %s\n", data);
 
-    om2m_coap_create_content_instance(ctx, dst_addr, cntid, CONTAINER_NAME,
+    om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
                                       name, data, &msg_id, COAP_REQUEST_POST);
     i++;
     vTaskDelay(1000 / portTICK_RATE_MS);
@@ -437,22 +365,25 @@ static void wifi_conn_init(void)
   ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-static void create_ae(void)
+static void create_ae(void *pvParameters)
 {
+  uri *uri_ = (uri *)pvParameters;
+
   while (!(xEventGroupGetBits(coap_group) & AE_BIT))
   {
-    ESP_LOGI(TAG, "Creating AE %s", AE_NAME);
-    om2m_coap_create_ae(ctx, dst_addr, AE_NAME, 8989);
+    ESP_LOGI(TAG, "Creating AE %s", uri_->entity);
+    om2m_coap_create_ae(ctx, dst_addr, uri_->entity, 8989);
     vTaskDelay(3000 / portTICK_RATE_MS);
   }
 }
 
-static void create_container(void)
+static void create_container(void *pvParameters)
 {
+  uri *uri_ = (uri *)pvParameters;
   while (!(xEventGroupGetBits(coap_group) & CNT_BIT))
   {
-    ESP_LOGI(TAG, "Creating publish container %s", CONTAINER_NAME);
-    om2m_coap_create_container(ctx, dst_addr, aei, CONTAINER_NAME);
+    ESP_LOGI(TAG, "Creating publish container %s", uri_->container);
+    om2m_coap_create_container(ctx, dst_addr, uri_->entity, uri_->container);
     vTaskDelay(3000 / portTICK_RATE_MS);
   }
 }

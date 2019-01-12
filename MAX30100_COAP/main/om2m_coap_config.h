@@ -4,7 +4,7 @@
 #define COAP_DEFAULT_TIME_SEC 5
 #define COAP_DEFAULT_TIME_USEC 0
 
-#define AE_NAME "324DFGergcewe3eddedsdfgoijl"
+#define AE_NAME "ESP8266"
 #define CONTAINER_NAME "HR"
 
 #define ACTUATION "Actuation"
