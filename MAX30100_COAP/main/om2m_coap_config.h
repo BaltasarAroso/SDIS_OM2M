@@ -6,7 +6,7 @@
 
 #define AE_NAME "ESP8266"
 #define CONTAINER_NAME "HR"
-
 #define ACTUATION "Actuation"
-#define MONITOR "Monitor"
-#define SUB "Sub"
+
+#define CNTRL_SUB "Sensor"
+#define SUB CNTRL_SUB"_sub"

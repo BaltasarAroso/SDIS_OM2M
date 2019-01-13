@@ -42,7 +42,7 @@
 
 #define LED_PULSE_WIDTH 0x03                      // 1600US 16BITS
 #define SAMPLING_RATE 0x01                        // 100Hz
-#define RED_LED_CURRENT MAX30100_LED_CURR_27_1MA  // 50mA
+#define RED_LED_CURRENT MAX30100_LED_CURR_27_1MA  // 27mA
 #define IR_LED_CURRENT MAX30100_LED_CURR_50MA     // 50mA
 
 #define CURRENT_ADJUSTMENT_PERIOD_MS 500
@@ -63,11 +63,11 @@
 #define MAX30100_IE_ENB_TEMP_RDY (1 << 6)
 #define MAX30100_IE_ENB_A_FULL (1 << 7)
 
-//#define DEBUG_I2C
+#define DEBUG_I2C
 //#define DEBUG_INIT
 //#define DEBUG_TEST
 #define DEBUG_FIFO
-//#define _DEBUG_
+#define _DEBUG_
 
 #define MAX30100_MODE_HRONLY 0x02   // Heart rate only
 #define MAX30100_MODE_SPO2_HR 0x03  // Enable SpO2 monitor
