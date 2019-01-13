@@ -84,7 +84,7 @@ public class RestHttpClient {
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
-                System.out.println("debug status: " + httpResponse.getStatusCode());
+                System.out.println("Status: " + httpResponse.getStatusCode());  // DEBUG
                 closeableHttpResponse.close();
             }
         } catch (Exception e) {
