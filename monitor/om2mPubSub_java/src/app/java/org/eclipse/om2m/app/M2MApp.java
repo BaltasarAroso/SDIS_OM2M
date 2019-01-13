@@ -123,6 +123,8 @@ public class M2MApp {
             try {
                 InputStream in = httpExchange.getRequestBody();
 
+                //TODO: ler tudo de uma vez
+
                 String requestBody = "";
                 int i;
                 char c;
@@ -160,8 +162,8 @@ public class M2MApp {
 
                 // Server needs the response. Otherwise, it issues the following in the terminal:
                 // org.apache.http.NoHttpResponseException: IPXXX:PORTYYY failed to respond
-                String responseBudy = "";
-                byte[] out = responseBudy.getBytes(StandardCharsets.UTF_8);
+                String responseBuddy = "";
+                byte[] out = responseBuddy.getBytes(StandardCharsets.UTF_8);
                 httpExchange.sendResponseHeaders(200, out.length);
                 OutputStream os = httpExchange.getResponseBody();
                 os.write(out);
