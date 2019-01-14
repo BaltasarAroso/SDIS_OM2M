@@ -23,6 +23,8 @@ import org.json.JSONObject;
  */
 
 public class M2MApp {
+    private static boolean DEBUG = true;
+
     public static M2MApp instance = null;
     private static ExecutorService notService;
 
@@ -125,17 +127,19 @@ public class M2MApp {
 
                 //TODO: ler tudo de uma vez
 
-                String requestBody = "";
+                StringBuilder requestBody = new StringBuilder();
                 int i;
                 char c;
                 while ((i = in.read()) != -1) {
                     c = (char) i;
-                    requestBody = (String) (requestBody + c);
+                    requestBody.append(c);
                 }
 
-                System.out.println(requestBody);  // DEBUG
+                if (DEBUG) {
+                    System.out.println(requestBody);
+                }
 
-                JSONObject json = new JSONObject(requestBody);
+                JSONObject json = new JSONObject(requestBody.toString());
                 if (json.getJSONObject("m2m:sgn").has("m2m:vrq")) {
                     System.out.println("subscribed.");
                 } else {
@@ -151,9 +155,10 @@ public class M2MApp {
                                         counterReceptions++;
                                         String ciName = cin.getString("rn");
                                         String con = cin.getString("con");
-                                        System.out.println("#" + counterReceptions + ":\nrn = " + ciName + "\ncon = " + con + "\n");
-//                                        System.out.println("#" + counterReceptions + "\n" + ciName + "," + epoch);
-                                        //System.out.println(counterReceptions + " [INFO] " + ciName + " has been created");
+                                        if (DEBUG) {
+                                            System.out.println("#" + counterReceptions + ":\nrn = " + ciName + "\ncon = " + con + "\n");
+                                        }
+                                        //TODO: do something with the content
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
                                 }
@@ -227,7 +232,6 @@ public class M2MApp {
     }
 
     public void clearBrokerData() {
-//        deleteController();
         deleteMonitor();
     }
 
@@ -253,18 +257,17 @@ public class M2MApp {
         JSONArray array = new JSONArray();
         array.put(appPoa);
         JSONObject obj = new JSONObject();
-        obj.put("rn", aeMonitorName);
-        obj.put("api", 12346);
-        obj.put("rr", true);
-        obj.put("poa", array);
+        obj.put("rn", aeMonitorName).put("api", 12346).put("rr", true).put("poa", array);
         JSONObject ae = new JSONObject();
         ae.put("m2m:ae", obj);
-        
-//        System.out.println(csePoa + "/~/" + cseId + "/" + cseName);  // DEBUG
-//        System.out.println(ae.toString());  // DEBUG
-        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
 
-        System.out.println("created");
+        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
+        checkHttpCode(httpResponse.getStatusCode());
+
+        if (DEBUG) {
+            System.out.println(csePoa + "/~/" + cseId + "/" + cseName);
+            System.out.println(ae.toString());
+        }
 
         System.out.print("Subscribing to sensor data... ");
         JSONArray array2 = new JSONArray();
@@ -275,9 +278,14 @@ public class M2MApp {
         obj2.put("nct", 2);
         JSONObject sub = new JSONObject();
         sub.put("m2m:sub", obj2);
-//        System.out.println(csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName);  // DEBUG
-//        System.out.println(sub.toString());  // DEBUG
-        RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName, sub.toString(), 23);
+
+        httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName, sub.toString(), 23);
+        checkHttpCode(httpResponse.getStatusCode());
+
+        if (DEBUG) {
+            System.out.println(csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName);
+            System.out.println(sub.toString());
+        }
 
     }
 
@@ -296,9 +304,9 @@ public class M2MApp {
         obj.put("rr", false);
         JSONObject resource = new JSONObject();
         resource.put("m2m:ae", obj);
-//        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, resource.toString(), 2);
+        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, resource.toString(), 2);
 
-        System.out.println("created.");
+        checkHttpCode(httpResponse.getStatusCode());
     }
 
     /**
@@ -314,9 +322,9 @@ public class M2MApp {
         obj.put("rn", containerId);
         JSONObject resource = new JSONObject();
         resource.put("m2m:cnt", obj);
-        RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + aeName, resource.toString(), 3);
+        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + aeName, resource.toString(), 3);
 
-        System.out.println("created.");
+        checkHttpCode(httpResponse.getStatusCode());
     }
 
 
@@ -346,9 +354,17 @@ public class M2MApp {
                 4
         );
 
-        System.out.print("created.");
-        System.out.println("Content Instance response status: " + httpResponse.getStatusCode());
+        checkHttpCode(httpResponse.getStatusCode());
+    }
 
+    public void checkHttpCode(int code) {
+        if (code == 201) {
+            System.out.println("created.");
+        } else if (code == 409) {
+            System.out.println("already exists.");
+        } else {
+            System.out.println("could not create. (" + code + ")");
+        }
     }
 
     /**
@@ -446,18 +462,20 @@ public class M2MApp {
             aeIp = wirelessAddress;
         	appPoa = aeProtocol + "://" + aeIp + ":" + aePort; //update app poa
         }
+
         // Delete publish and monitor app via API
         M2MApp.getInstance().clearBrokerData();
 
         M2MApp.getInstance().startServer();
-        M2MApp.getInstance().createApplication(aeNameMaster, appMasterId);
+//        M2MApp.getInstance().createApplication(aeNameMaster, appMasterId);
         M2MApp.getInstance().createMonitor();
         flagSubscription = true;  // start collecting times
 
         String data = "TESTA";
 
+        Random rand = new Random();
         for (int i = 0; i < 10; i++) {
-            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, Integer.toString(i));
+            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, String.valueOf(rand.nextInt()));
             Thread.sleep(5000);
         }
 
