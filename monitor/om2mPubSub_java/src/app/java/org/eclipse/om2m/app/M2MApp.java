@@ -1,20 +1,38 @@
 package org.eclipse.om2m.app;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
-
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
-import java.net.*;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.io.*;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.influxdb.InfluxDB;
+import org.influxdb.InfluxDBFactory;
+import org.influxdb.dto.BatchPoints;
+import org.influxdb.dto.Point;
+import org.influxdb.dto.Pong;
+import org.influxdb.dto.Query;
+import org.influxdb.dto.QueryResult;
+import org.influxdb.impl.InfluxDBResultMapper;
 import org.json.JSONArray;
 import org.json.JSONObject;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 
 
 /**
@@ -25,6 +43,7 @@ import org.json.JSONObject;
 public class M2MApp {
     public static M2MApp instance = null;
     private static ExecutorService notService;
+    private static InfluxDB influxDB;
 
     public static String filesFolder = System.getProperty("user.dir");
 
@@ -71,6 +90,21 @@ public class M2MApp {
 
     public static boolean flagSubscription = false;
 
+    private static void insertDB(String con) {
+    	 Point point = Point.measurement("HeartBeats")
+       		  .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+       		  .addField("sensor", aeName)
+       		  .addField("measurement",con)
+       		  .build();
+      
+       BatchPoints batchPoints = BatchPoints
+       		  .database("SDIS")
+       		  .retentionPolicy("default")
+       		  .build();
+       batchPoints.point(point);
+       influxDB.write(batchPoints);
+    }
+    
     public M2MApp() {
 
     }
@@ -140,7 +174,6 @@ public class M2MApp {
                     System.out.println("subscribed.");
                 } else {
                     if (flagSubscription) {
-
                         if (json.getJSONObject("m2m:sgn").has("m2m:nev")) {
                             if (json.getJSONObject("m2m:sgn").getJSONObject("m2m:nev").has("m2m:rep")) {
                                 if (json.getJSONObject("m2m:sgn").getJSONObject("m2m:nev").getJSONObject("m2m:rep").has("m2m:cin")) {
@@ -151,6 +184,7 @@ public class M2MApp {
                                         counterReceptions++;
                                         String ciName = cin.getString("rn");
                                         String con = cin.getString("con");
+                                        insertDB(con);
                                         System.out.println("#" + counterReceptions + ":\nrn = " + ciName + "\ncon = " + con + "\n");
 //                                        System.out.println("#" + counterReceptions + "\n" + ciName + "," + epoch);
                                         //System.out.println(counterReceptions + " [INFO] " + ciName + " has been created");
@@ -434,7 +468,6 @@ public class M2MApp {
                 System.exit(1);
             }
         }
-
         System.out.println("oM2M PoA: " + csePoa);
         System.out.println("Publisher/Subscriber PoA: " + appPoa);
         System.out.println("Number of Threads: " + numberThreads);
@@ -446,6 +479,12 @@ public class M2MApp {
             aeIp = wirelessAddress;
         	appPoa = aeProtocol + "://" + aeIp + ":" + aePort; //update app poa
         }
+        influxDB = InfluxDBFactory.connect("http://"+aeIp +":8086", "admin", "admin");
+        influxDB.setLogLevel(InfluxDB.LogLevel.BASIC);
+        influxDB.createDatabase("SDIS");
+        influxDB.createRetentionPolicy("default", "SDIS", "30d", 1, true);
+        
+        
         // Delete publish and monitor app via API
         M2MApp.getInstance().clearBrokerData();
 
