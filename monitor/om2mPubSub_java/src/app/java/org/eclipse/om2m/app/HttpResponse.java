@@ -1,4 +1,4 @@
-package org.eclipse.om2m.app;
+package app.java.org.eclipse.om2m.app;
 
 /**
  * Used to store and get HTTP response codes and payloads

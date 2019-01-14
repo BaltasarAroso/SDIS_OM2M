@@ -1,12 +1,20 @@
-package org.eclipse.om2m.app;
+package app.java.org.eclipse.om2m.app;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.conn.HttpHostConnectException;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
 import org.influxdb.dto.BatchPoints;
 import org.influxdb.dto.Point;
+import org.influxdb.dto.Query;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -15,7 +23,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,7 +35,9 @@ import java.util.concurrent.TimeUnit;
  */
 
 public class M2MApp {
-    private static boolean DEBUG = true;
+    private static boolean IP_DEBUG = false;
+    private static boolean OM2M_DEBUG = true;
+    private static boolean DB_DEBUG = true;
 
     public static M2MApp instance = null;
     private static ExecutorService notService;
@@ -72,28 +81,14 @@ public class M2MApp {
     private static String targetCse = "in-cse";
     private static String aeName = "ESP8266";
 
-
     private static String csePoa = cseProtocol + "://" + cseIp + ":" + csePort;
     private static String appPoa = aeProtocol + "://" + aeIp + ":" + aePort;
+
+    private static String dbPoa = "http://" + aeIp + ":8086";
 
 
     public static boolean flagSubscription = false;
 
-    private static void insertDB(String con) {
-    	 Point point = Point.measurement("HeartBeats")
-       		  .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-       		  .addField("sensor", aeName)
-       		  .addField("measurement",con)
-       		  .build();
-      
-       BatchPoints batchPoints = BatchPoints
-       		  .database("SDIS")
-       		  .retentionPolicy("default")
-       		  .build();
-       batchPoints.point(point);
-       influxDB.write(batchPoints);
-    }
-    
     public M2MApp() {
 
     }
@@ -105,6 +100,20 @@ public class M2MApp {
         return instance;
     }
 
+    private static void insertDB(String sensor, String con) {
+        Point point = Point.measurement("HeartBeats")
+                .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+                .addField("sensor", sensor)
+                .addField("measurement",con)
+                .build();
+
+        BatchPoints batchPoints = BatchPoints
+                .database("SDIS")
+                .retentionPolicy("default")
+                .build();
+        batchPoints.point(point);
+        influxDB.write(batchPoints);
+    }
 
     /**
      * Initializes Hashmaps
@@ -156,7 +165,7 @@ public class M2MApp {
                     requestBody.append(c);
                 }
 
-                if (DEBUG) {
+                if (OM2M_DEBUG) {
                     System.out.println(requestBody);
                 }
 
@@ -175,11 +184,11 @@ public class M2MApp {
                                         counterReceptions++;
                                         String ciName = cin.getString("rn");
                                         String con = cin.getString("con");
-                                        if (DEBUG) {
+                                        if (OM2M_DEBUG) {
                                             System.out.println("#" + counterReceptions + ":\nrn = " + ciName + "\ncon = " + con + "\n");
                                         }
                                         //TODO: do something with the content
-                                        insertDB(con);
+                                        insertDB(aeName, con);
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
                                 }
@@ -191,7 +200,7 @@ public class M2MApp {
                 // Server needs the response. Otherwise, it issues the following in the terminal:
                 // org.apache.http.NoHttpResponseException: IPXXX:PORTYYY failed to respond
                 String responseBuddy = "";
-                byte[] out = responseBuddy.getBytes(StandardCharsets.UTF_8);
+                byte[] out = responseBuddy.getBytes("UTF-8");
                 httpExchange.sendResponseHeaders(200, out.length);
                 OutputStream os = httpExchange.getResponseBody();
                 os.write(out);
@@ -285,7 +294,7 @@ public class M2MApp {
         HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
         checkHttpCode(httpResponse.getStatusCode());
 
-        if (DEBUG) {
+        if (OM2M_DEBUG) {
             System.out.println(csePoa + "/~/" + cseId + "/" + cseName);
             System.out.println(ae.toString());
         }
@@ -303,7 +312,7 @@ public class M2MApp {
         httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName, sub.toString(), 23);
         checkHttpCode(httpResponse.getStatusCode());
 
-        if (DEBUG) {
+        if (OM2M_DEBUG) {
             System.out.println(csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName);
             System.out.println(sub.toString());
         }
@@ -436,13 +445,15 @@ public class M2MApp {
                         continue;
 
                     displayName = iface.getDisplayName().toLowerCase();
-//                    System.out.println(displayName);
                     if (
                         displayName.contains("wireless")
                         || displayName.contains("wifi")
                         || displayName.contains("wi-fi")
                         || displayName.contains("802.11")
                     ) {
+                        if (IP_DEBUG) {
+                            System.out.println("Interface name: \"" + iface.getDisplayName() + "\"");
+                        }
                         ip = addr.getHostAddress();
                         break;
                     }
@@ -455,11 +466,56 @@ public class M2MApp {
         return ip;
     }
 
+    private static void execQuery(InfluxDB db, String query, String database) {
+
+        db.query(new Query(query, database), queryResult -> {
+            if (DB_DEBUG) {
+                System.out.print("Query result: ");
+                System.out.println(queryResult.getResults());
+            }
+        }, throwable -> {
+            System.out.print("Query error: ");
+            System.out.println(throwable.toString());
+        });
+
+    }
+
+    private static InfluxDB getDatabase(String dbName, String username, String password) {
+
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpGet httpGet = new HttpGet(dbPoa + "/ping");
+
+        try {
+            try (CloseableHttpResponse closeableHttpResponse = httpClient.execute(httpGet)) {
+                HttpEntity entityHTTP = closeableHttpResponse.getEntity();
+                EntityUtils.consume(entityHTTP);
+            }
+        } catch (HttpHostConnectException e) {
+            System.err.println("Can't connect to database.");
+            System.exit(-1);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        InfluxDB db = InfluxDBFactory.connect(dbPoa, username, password);
+        db.setLogLevel(InfluxDB.LogLevel.BASIC);
+        execQuery(
+                db,
+                "CREATE DATABASE \"" + dbName + "\"", ""
+        );
+        execQuery(
+                db,
+                "CREATE RETENTION POLICY \"default\" ON \"" + dbName + "\" DURATION 30d REPLICATION 1 DEFAULT",
+                dbName
+        );
+
+        return db;
+    }
+
 
     public static void main(String[] args) throws IOException, InterruptedException {
     	
-    	System.out.println("Working Directory = " +
-                System.getProperty("user.dir"));
+    	System.out.println("Working Directory = " + System.getProperty("user.dir"));
 
         if (args.length == 3) {
             try {
@@ -482,27 +538,23 @@ public class M2MApp {
             aeIp = wirelessAddress;
         	appPoa = aeProtocol + "://" + aeIp + ":" + aePort; //update app poa
         }
-        influxDB = InfluxDBFactory.connect("http://"+aeIp +":8086", "admin", "admin");
-        influxDB.setLogLevel(InfluxDB.LogLevel.BASIC);
-        influxDB.createDatabase("SDIS");
-        influxDB.createRetentionPolicy("default", "SDIS", "30d", 1, true);
-        
-        
+
+        influxDB = getDatabase("SDIS", "sdis", "sdis_admin");
+
         // Delete publish and monitor app via API
-        M2MApp.getInstance().clearBrokerData();
+//        M2MApp.getInstance().clearBrokerData();
+//
+//        M2MApp.getInstance().startServer();
+//        M2MApp.getInstance().createMonitor();
+//        flagSubscription = true;  // start collecting times
 
-        M2MApp.getInstance().startServer();
-//        M2MApp.getInstance().createApplication(aeNameMaster, appMasterId);
-        M2MApp.getInstance().createMonitor();
-        flagSubscription = true;  // start collecting times
-
-        String data = "TESTA";
-
-        Random rand = new Random();
-        for (int i = 0; i < 10; i++) {
-            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, String.valueOf(rand.nextInt()));
-            Thread.sleep(5000);
-        }
+//        String data = "TESTA";
+//
+//        Random rand = new Random();
+//        for (int i = 0; i < 10; i++) {
+//            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, String.valueOf(rand.nextInt()));
+//            Thread.sleep(5000);
+//        }
 
         //M2MApp.getInstance().createApplication(aeNameMaster,appMasterId);
 

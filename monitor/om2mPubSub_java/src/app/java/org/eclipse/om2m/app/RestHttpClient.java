@@ -1,4 +1,4 @@
-package org.eclipse.om2m.app;
+package app.java.org.eclipse.om2m.app;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
