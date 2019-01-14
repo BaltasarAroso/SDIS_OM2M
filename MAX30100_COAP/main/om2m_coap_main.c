@@ -21,6 +21,20 @@
 #include <time.h>
 #include <stdlib.h>
 
+#define TEST_CONDITION(condition,true,false)                 if(condition){true;} else{false;}
+#define TEST_ASSERT(condition, line, message,true)           TEST_CONDITION(condition,true, {ESP_LOGV(line, message);return;}) //if (condition) {true;} else {ESP_LOGV(line, message);return;}
+#define TEST_ASSERT_NULL(pointer, line, message,action)      TEST_ASSERT(((pointer) == NULL),  line, message,action)
+#define TEST_ASSERT_NOT_NULL(pointer, line, message,action)  TEST_ASSERT(((pointer) != NULL),  line, message,action)
+
+#define TEST_RESPONSE_SET_BIT(response,group,bit)     { TEST_CONDITION(response->hdr->code == COAP_RESPONSE_CODE(403) || \
+                                                        response->hdr->code == COAP_RESPONSE_CODE(201), \
+                                                        {xEventGroupSetBits(group,bit);return;},\
+                                                        return;);}
+
+#define TEST_JSON_ASSERT(object,value)                 {TEST_ASSERT_NOT_NULL(object, value,"Not JSON",cJSON_Print(object));}
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
+
 #define RETRANSMISSION 5000
 #define COAP_SERVER_PORT 5683
 #define TESTE_PUBLISH
@@ -30,19 +44,13 @@
 //#define SENSOR
 //#define DEBUG_SENSOR
 
-typedef struct
-{
-  char *entity;
-  char *container;
-} uri;
-
+const static char *TAG = "coap_om2m_client";
 unsigned int wait_seconds = 90; /* default timeout in seconds */
 coap_tick_t max_wait;           /* global timeout (changed by set_timeout()) */
 
 unsigned int obs_seconds = 30; /* default observe time */
 coap_tick_t obs_wait = 0;      /* timeout for current subscription */
 
-#define min(a, b) ((a) < (b) ? (a) : (b))
 
 static inline void set_timeout(coap_tick_t *timer, const unsigned int seconds)
 {
@@ -50,14 +58,15 @@ static inline void set_timeout(coap_tick_t *timer, const unsigned int seconds)
   *timer += seconds * COAP_TICKS_PER_SECOND;
 }
 
+// Sensor variables
 uint16_t ir_buffer[MAX30100_FIFO_DEPTH];
 uint16_t red_buffer[MAX30100_FIFO_DEPTH];
 size_t data_len;
 
+// CoAP/OM2M variables
 static EventGroupHandle_t coap_group;
 coap_context_t *ctx = NULL;
 coap_address_t dst_addr, src_addr;
-char aei[50], cntid[50];
 
 /* The event group allows multiple bits for each event,
    but we only care about one event - are we connected
@@ -69,10 +78,10 @@ unsigned int CTRL_BIT = BIT3;
 unsigned int SUB_BIT = BIT4;
 unsigned int BUFFER_BIT = BIT5;
 
-const static char *TAG = "coap_om2m_client";
-static void create_ae(void *pvParameters);
-static void create_container(void *pvParameters);
-static void create_sub(void *pvParameters, char *sub_entity, char *sub_name);
+// Aux functions
+static void create_entity(char *entity);
+static void create_container(char *entity,char *container);
+static void create_sub(char *entity,char *container, char *sub_entity, char *sub_name);
 
 void adjust_current()
 {
@@ -101,10 +110,30 @@ static void request_hanlder(struct coap_context_t *ctx,
                             coap_pdu_t *request)
 {
 
-  unsigned char *data;
+  char *data;
   size_t data_len;
-  coap_get_data(request, &data_len, &data);
+  coap_get_data(request, &data_len, (unsigned char **)&data);
   printf("Request: %s\n\n\n", data);
+  cJSON *requestJson = cJSON_Parse(data);
+  TEST_JSON_ASSERT(requestJson,"requestJson");
+
+  cJSON *m2m_sgn = cJSON_GetObjectItem(requestJson,"m2m:sgn");
+  TEST_JSON_ASSERT(m2m_sgn,"m2m:sgn");
+
+  cJSON *m2m_nev = cJSON_GetObjectItem(m2m_sgn, "m2m:nev");
+  TEST_JSON_ASSERT(m2m_nev,"m2m:nev");
+
+  cJSON *m2m_rep = cJSON_GetObjectItem(m2m_nev, "m2m:rep");
+  TEST_JSON_ASSERT(m2m_rep,"m2m:rep");
+
+  cJSON *m2m_cin = cJSON_GetObjectItem(m2m_rep,"m2m:cin");
+  TEST_JSON_ASSERT(m2m_cin,"m2m:cin");
+
+  cJSON *con = cJSON_GetObjectItem(m2m_cin,"con");
+  TEST_JSON_ASSERT(con,"con");
+
+  char *con_str = cJSON_GetStringValue(con);
+  printf("Request con: %s\n",con_str);
 }
 
 static void message_handler(struct coap_context_t *ctx,
@@ -122,40 +151,14 @@ static void message_handler(struct coap_context_t *ctx,
   if (has_data)
     printf("Received: %s\n", data);
 #endif
-  printf("Bits: %d\n", (uint32_t)xEventGroupGetBits(coap_group));
-  if (!(xEventGroupGetBits(coap_group) & AE_BIT))
-  {
-    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(201))
-    {                                         // not 40* -> AE created
-      xEventGroupSetBits(coap_group, AE_BIT); // AE created
-      return;
-    }
-  }
-  else if (!(xEventGroupGetBits(coap_group) & CNT_BIT))
-  {
-    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(200))
-    {                                          // not 40* -> AE created
-      xEventGroupSetBits(coap_group, CNT_BIT); // AE created
-      return;
-    }
-  }
-  else if (!(xEventGroupGetBits(coap_group) & SUB_BIT))
-  {
-    if (received->hdr->code == COAP_RESPONSE_CODE(403) || received->hdr->code == COAP_RESPONSE_CODE(201))
-    {                                          // not 40* -> AE created
-      xEventGroupSetBits(coap_group, SUB_BIT); // AE created
-      return;
-    }
-  }
+  if (!(xEventGroupGetBits(coap_group) & AE_BIT))       {TEST_RESPONSE_SET_BIT(received,coap_group,AE_BIT);}
+  else if (!(xEventGroupGetBits(coap_group) & CNT_BIT)) {TEST_RESPONSE_SET_BIT(received,coap_group,CNT_BIT);} 
+  else if (!(xEventGroupGetBits(coap_group) & SUB_BIT)) {TEST_RESPONSE_SET_BIT(received,coap_group,SUB_BIT);}
   else
   {
     if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_201))
     { // Published
     }
-    /*
-    if (has_data)
-      printf(data);
-      */
   }
 }
 
@@ -244,38 +247,13 @@ static void coap_context_handler(void *pvParameters)
 }
 static void om2m_coap_client_task(void *pvParameters)
 {
-  uri uri_ = {
-      .entity = AE_NAME,
-      .container = CONTAINER_NAME};
-
-  create_ae((void *)&uri_);
-
-  create_container((void *)&uri_);
-  xEventGroupClearBits(coap_group, CNT_BIT);
-
-  uri_.container = ACTUATION;
-  create_container((void *)&uri_);
-
-  uri_.entity = CNTRL_SUB;
-  create_ae((void *)&uri_);
-
-  uri_.entity = AE_NAME;
-  uri_.container = ACTUATION;
-  create_sub((void *)&uri_, CNTRL_SUB, SUB);
+  create_entity(AE_NAME);                             // Create ESP8266
+  create_container(AE_NAME,CONTAINER_NAME);           // Create ESP8266/HR
+  create_container(AE_NAME,ACTUATION);                // Create ESP8266/Actuation
+  create_entity(CNTRL_SUB);                           // Create Sensor
+  create_sub(AE_NAME,ACTUATION, CNTRL_SUB, SUB);      // Subscribe to ESP8266/Actuation with Sensor entity
 
   char name[50];
-  /* TODO:
-
-  *esp/dados node:publish pc:sub
-  *esp/control pc:pub node:sub
-
-  *create ae pc_pub
-  *create container pc_pub/hr
-
-  create ae esp_sub
-  create subscription esp_sub to pc_pub/hr
-  */
-
 #if defined(TESTING) && defined(TESTE_PUBLISH)
   char data[] = "COMUNICATION TESTE";
 #else
@@ -361,48 +339,45 @@ static void wifi_conn_init(void)
   ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-static void create_sub(void *pvParameters, char *sub_entity, char *sub_name)
+static void create_sub(char *entity,char *container, char *sub_entity, char *sub_name)
 {
-  uri *uri_ = (uri *)pvParameters;
   xEventGroupClearBits(coap_group, SUB_BIT);
 
   while (!(xEventGroupGetBits(coap_group) & SUB_BIT))
   {
-    ESP_LOGI(TAG, "Subscribing to: %s/%s", uri_->entity, uri_->container);
-    om2m_coap_create_subscription(ctx, dst_addr, uri_->entity, uri_->container, sub_entity, sub_name);
+    ESP_LOGI(TAG, "Subscribing to: %s/%s with %s", entity, container,sub_entity);
+    om2m_coap_create_subscription(ctx, dst_addr, entity, container, sub_entity, sub_name);
     vTaskDelay(RETRANSMISSION / portTICK_RATE_MS);
   }
-  printf("Subscribed to %s/%s\n", uri_->entity, uri_->container);
+  printf("Subscribed to %s/%s with %s\tSub name: %s\n", entity, container, sub_entity, sub_name);
 }
 
-static void create_ae(void *pvParameters)
+static void create_entity(char *entity)
 {
-  uri *uri_ = (uri *)pvParameters;
   xEventGroupClearBits(coap_group, AE_BIT);
 
   while (!(xEventGroupGetBits(coap_group) & AE_BIT))
   {
-    ESP_LOGI(TAG, "Creating AE %s", uri_->entity);
-    om2m_coap_create_ae(ctx, dst_addr, uri_->entity, 8989);
+    ESP_LOGI(TAG, "Creating AE %s", entity);
+    om2m_coap_create_ae(ctx, dst_addr, entity, 8989);
     vTaskDelay(RETRANSMISSION / portTICK_RATE_MS);
   }
   xEventGroupWaitBits(coap_group, AE_BIT, false, true, portMAX_DELAY);
-  printf("AE %s created\n", uri_->entity);
+  printf("AE %s created\n", entity);
 }
 
-static void create_container(void *pvParameters)
+static void create_container(char *entity,char *container)
 {
-  uri *uri_ = (uri *)pvParameters;
   xEventGroupClearBits(coap_group, CNT_BIT);
 
   while (!(xEventGroupGetBits(coap_group) & CNT_BIT))
   {
-    ESP_LOGI(TAG, "Creating publish container %s", uri_->container);
-    om2m_coap_create_container(ctx, dst_addr, uri_->entity, uri_->container);
+    ESP_LOGI(TAG, "Creating publish container %s/%s",entity, container);
+    om2m_coap_create_container(ctx, dst_addr, entity, container);
     vTaskDelay(RETRANSMISSION / portTICK_RATE_MS);
   }
   xEventGroupWaitBits(coap_group, CNT_BIT, false, true, portMAX_DELAY);
-  printf("Controller %s created\n", ACTUATION);
+  printf("Container %s/%s created\n", entity,container);
 }
 
 static void init_coap(void)
@@ -410,6 +385,7 @@ static void init_coap(void)
 #if defined(TESTING) && defined(DEBUG_COAP)
   printf("COAP_RESPONSE_200: %d\n", COAP_RESPONSE_CODE(200));
   printf("COAP_RESPONSE_201: %d\n", COAP_RESPONSE_CODE(201));
+  printf("COAP_RESPONSE_205: %d\n", COAP_RESPONSE_CODE(205));
   printf("COAP_RESPONSE_304: %d\n", COAP_RESPONSE_CODE(304));
   printf("COAP_RESPONSE_400: %d\n", COAP_RESPONSE_CODE(400));
   printf("COAP_RESPONSE_401: %d\n", COAP_RESPONSE_CODE(401));
