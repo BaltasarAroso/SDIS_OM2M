@@ -1,4 +1,4 @@
-package app.java.org.eclipse.om2m.app;
+package app.org.eclipse.om2m.app;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -10,9 +10,9 @@ import org.apache.http.conn.HttpHostConnectException;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
+import org.influxdb.BatchOptions;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
-import org.influxdb.dto.BatchPoints;
 import org.influxdb.dto.Point;
 import org.influxdb.dto.Query;
 import org.json.JSONArray;
@@ -20,7 +20,6 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.*;
 import java.util.*;
@@ -36,8 +35,8 @@ import java.util.concurrent.TimeUnit;
 
 public class M2MApp {
     private static boolean IP_DEBUG = false;
-    private static boolean OM2M_DEBUG = true;
-    private static boolean DB_DEBUG = true;
+    private static boolean OM2M_DEBUG = false;
+    private static boolean DB_DEBUG = false;
 
     public static M2MApp instance = null;
     private static ExecutorService notService;
@@ -86,8 +85,10 @@ public class M2MApp {
 
     private static String dbPoa = "http://" + aeIp + ":8086";
 
+    private static boolean flagTable = false;
 
     public static boolean flagSubscription = false;
+
 
     public M2MApp() {
 
@@ -98,21 +99,6 @@ public class M2MApp {
             instance = new M2MApp();
         }
         return instance;
-    }
-
-    private static void insertDB(String sensor, String con) {
-        Point point = Point.measurement("HeartBeats")
-                .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-                .addField("sensor", sensor)
-                .addField("measurement",con)
-                .build();
-
-        BatchPoints batchPoints = BatchPoints
-                .database("SDIS")
-                .retentionPolicy("default")
-                .build();
-        batchPoints.point(point);
-        influxDB.write(batchPoints);
     }
 
     /**
@@ -140,7 +126,6 @@ public class M2MApp {
         System.out.println("started.");
     }
 
-
     /**
      * Creates an Handler for receiving and processing notifications
      * <p>
@@ -149,13 +134,13 @@ public class M2MApp {
     static class MyHandlerM2M implements HttpHandler {
 
         public void handle(HttpExchange httpExchange) {
-            System.out.println("Event Received!");
+            if (OM2M_DEBUG) {
+                System.out.println("Event Received!");
+            }
             long epoch = System.currentTimeMillis();
 
             try {
                 InputStream in = httpExchange.getRequestBody();
-
-                //TODO: ler tudo de uma vez
 
                 StringBuilder requestBody = new StringBuilder();
                 int i;
@@ -171,7 +156,8 @@ public class M2MApp {
 
                 JSONObject json = new JSONObject(requestBody.toString());
                 if (json.getJSONObject("m2m:sgn").has("m2m:vrq")) {
-                    System.out.println("subscribed.");
+//                    System.out.println("subscribed.");
+                    flagSubscription = true;
                 } else {
                     if (flagSubscription) {
                         if (json.getJSONObject("m2m:sgn").has("m2m:nev")) {
@@ -187,8 +173,7 @@ public class M2MApp {
                                         if (OM2M_DEBUG) {
                                             System.out.println("#" + counterReceptions + ":\nrn = " + ciName + "\ncon = " + con + "\n");
                                         }
-                                        //TODO: do something with the content
-                                        insertDB(aeName, con);
+                                        insertDB(influxDB, aeName, con);
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
                                 }
@@ -199,12 +184,8 @@ public class M2MApp {
 
                 // Server needs the response. Otherwise, it issues the following in the terminal:
                 // org.apache.http.NoHttpResponseException: IPXXX:PORTYYY failed to respond
-                String responseBuddy = "";
-                byte[] out = responseBuddy.getBytes("UTF-8");
-                httpExchange.sendResponseHeaders(200, out.length);
-                OutputStream os = httpExchange.getResponseBody();
-                os.write(out);
-                os.close();
+                httpExchange.sendResponseHeaders(204, -1);
+                httpExchange.close();
 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -261,9 +242,11 @@ public class M2MApp {
         }
     }
 
+
     public void clearBrokerData() {
         deleteMonitor();
     }
+
 
     public void deleteMonitor() {
         RestHttpClient.delete(
@@ -283,6 +266,7 @@ public class M2MApp {
      * @return HTTPResponse
      */
     public void createMonitor() {
+
         System.out.print("Creating Monitor... ");
         JSONArray array = new JSONArray();
         array.put(appPoa);
@@ -291,8 +275,24 @@ public class M2MApp {
         JSONObject ae = new JSONObject();
         ae.put("m2m:ae", obj);
 
-        HttpResponse httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
-        checkHttpCode(httpResponse.getStatusCode());
+        HttpResponse httpResponse;
+        int code;
+        do {
+            httpResponse = RestHttpClient.post(
+                    originator,
+                    csePoa + "/~/" + cseId + "/" + cseName,
+                    ae.toString(),
+                    2
+            );
+            code = httpResponse.getStatusCode();
+
+            if (code == 409) {
+                checkHttpCode(code);
+                System.out.print("Deleting and trying again... ");
+                deleteMonitor();
+            }
+        } while (code != 201);
+        checkHttpCode(code);
 
         if (OM2M_DEBUG) {
             System.out.println(csePoa + "/~/" + cseId + "/" + cseName);
@@ -309,8 +309,17 @@ public class M2MApp {
         JSONObject sub = new JSONObject();
         sub.put("m2m:sub", obj2);
 
-        httpResponse = RestHttpClient.post(originator, csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName, sub.toString(), 23);
-        checkHttpCode(httpResponse.getStatusCode());
+        do {
+            httpResponse = RestHttpClient.post(
+                    originator,
+                    csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName,
+                    sub.toString(),
+                    23
+            );
+            code = httpResponse.getStatusCode();
+//            System.out.println("Code: " + code);
+        } while (code != 201 && !flagSubscription);
+        checkHttpCode(code);
 
         if (OM2M_DEBUG) {
             System.out.println(csePoa + "/~/" + targetCse + "/" + cseName + "/" + aeName + "/" + cntName);
@@ -387,16 +396,6 @@ public class M2MApp {
         checkHttpCode(httpResponse.getStatusCode());
     }
 
-    public void checkHttpCode(int code) {
-        if (code == 201) {
-            System.out.println("created.");
-        } else if (code == 409) {
-            System.out.println("already exists.");
-        } else {
-            System.out.println("could not create. (" + code + ")");
-        }
-    }
-
     /**
      * Sets a counter
      *
@@ -424,7 +423,12 @@ public class M2MApp {
         tEpochsSub.put(edge, millis);
     }
 
-    public String getWirelessAddress() {
+    /**
+     * Encounters the first available Wi-Fi IPv4 address, if any
+     *
+     * @return A string or null
+     */
+    private String getWirelessAddress() {
         String ip = null;
 
         String displayName;
@@ -466,6 +470,28 @@ public class M2MApp {
         return ip;
     }
 
+    /**
+     * Checks an HTTP response code and appends a corresponding message to stdout
+     *
+     * @param code  HTTP response code
+     */
+    private void checkHttpCode(int code) {
+        if (code == 201) {
+            System.out.println("created.");
+        } else if (code == 409) {
+            System.out.println("already exists.");
+        } else {
+            System.out.println("error. (" + code + ")");
+        }
+    }
+
+    /**
+     * Executes a query in the given database
+     *
+     * @param db        Database connection
+     * @param query     Query to execute
+     * @param database  Database
+     */
     private static void execQuery(InfluxDB db, String query, String database) {
 
         db.query(new Query(query, database), queryResult -> {
@@ -480,6 +506,14 @@ public class M2MApp {
 
     }
 
+    /**
+     *
+     * @param dbName
+     * @param username
+     * @param password
+     * 
+     * @return
+     */
     private static InfluxDB getDatabase(String dbName, String username, String password) {
 
         CloseableHttpClient httpClient = HttpClients.createDefault();
@@ -498,7 +532,7 @@ public class M2MApp {
         }
 
         InfluxDB db = InfluxDBFactory.connect(dbPoa, username, password);
-        db.setLogLevel(InfluxDB.LogLevel.BASIC);
+//        db.setLogLevel(InfluxDB.LogLevel.BASIC);
         execQuery(
                 db,
                 "CREATE DATABASE \"" + dbName + "\"", ""
@@ -510,6 +544,26 @@ public class M2MApp {
         );
 
         return db;
+    }
+
+
+    private static void insertDB(InfluxDB db, String sensor, String con) {
+
+        double value;
+        try {
+            value = Double.parseDouble(con);
+        } catch (NumberFormatException e) {
+            System.err.println("Illegal number type received. (" + con + ")");
+            return;
+        }
+
+        db.write(
+                Point.measurement("HeartBeats")
+                        .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+                        .addField("sensor", sensor)
+                        .addField("measurement", value)
+                        .build()
+        );
     }
 
 
@@ -541,20 +595,24 @@ public class M2MApp {
 
         influxDB = getDatabase("SDIS", "sdis", "sdis_admin");
 
+        influxDB.enableBatch(BatchOptions.DEFAULTS);
+
         // Delete publish and monitor app via API
-//        M2MApp.getInstance().clearBrokerData();
-//
-//        M2MApp.getInstance().startServer();
-//        M2MApp.getInstance().createMonitor();
+        M2MApp.getInstance().clearBrokerData();
+
+        M2MApp.getInstance().startServer();
+        M2MApp.getInstance().createMonitor();
 //        flagSubscription = true;  // start collecting times
 
-//        String data = "TESTA";
-//
-//        Random rand = new Random();
-//        for (int i = 0; i < 10; i++) {
-//            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, String.valueOf(rand.nextInt()));
-//            Thread.sleep(5000);
-//        }
+        String data = "Chuck Testa";
+
+        Random rand = new Random();
+        for (int i = 0; i < 10; i++) {
+            M2MApp.getInstance().createContentInstance(data, aeName, aeNamePub, String.valueOf(rand.nextInt()));
+            Thread.sleep(5000);
+        }
+
+        influxDB.close();
 
         //M2MApp.getInstance().createApplication(aeNameMaster,appMasterId);
 

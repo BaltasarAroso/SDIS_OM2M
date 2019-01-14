@@ -1,4 +1,4 @@
-package app.java.org.eclipse.om2m.app;
+package app.org.eclipse.om2m.app;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -100,7 +100,6 @@ public class RestHttpClient {
      * @return HTTPResponse
      */
     public static HttpResponse delete(String originator, String uri) {
-        System.out.println("HTTP DELETE " + uri);
 
         CloseableHttpClient httpclient = HttpClients.createDefault();
         HttpDelete httpDelete = new HttpDelete(uri);
@@ -123,7 +122,6 @@ public class RestHttpClient {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        System.out.println("HTTP Response " + httpResponse.getStatusCode() + "\n" + httpResponse.getBody());
         return httpResponse;
     }
 }
