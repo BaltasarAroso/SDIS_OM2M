@@ -249,7 +249,6 @@ public class M2MApp {
      * @return HTTPResponse
      */
     public void createMonitor() {
-    	
         System.out.print("Creating Monitor... ");
         JSONArray array = new JSONArray();
         array.put(appPoa);
@@ -260,6 +259,7 @@ public class M2MApp {
         obj.put("poa", array);
         JSONObject ae = new JSONObject();
         ae.put("m2m:ae", obj);
+        
 //        System.out.println(csePoa + "/~/" + cseId + "/" + cseName);  // DEBUG
 //        System.out.println(ae.toString());  // DEBUG
         RestHttpClient.post(originator, csePoa + "/~/" + cseId + "/" + cseName, ae.toString(), 2);
@@ -399,6 +399,7 @@ public class M2MApp {
                         continue;
 
                     displayName = iface.getDisplayName().toLowerCase();
+//                    System.out.println(displayName);
                     if (
                         displayName.contains("wireless")
                         || displayName.contains("wifi")
@@ -443,8 +444,8 @@ public class M2MApp {
         if ((wirelessAddress = M2MApp.getInstance().getWirelessAddress()) != null) {
             System.out.println("Using address: " + wirelessAddress);
             aeIp = wirelessAddress;
+        	appPoa = aeProtocol + "://" + aeIp + ":" + aePort; //update app poa
         }
-
         // Delete publish and monitor app via API
         M2MApp.getInstance().clearBrokerData();
 
