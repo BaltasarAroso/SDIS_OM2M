@@ -9,4 +9,6 @@ build/
 **/*.iml
 backup/*
 *.db
+**/*.log
+**/.factorypath
 sdkconfig[.old]

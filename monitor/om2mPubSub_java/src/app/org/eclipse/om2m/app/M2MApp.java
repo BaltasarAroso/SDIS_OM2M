@@ -21,6 +21,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.*;
 import java.time.Instant;
@@ -627,21 +628,11 @@ public class M2MApp {
                 );
 
                 InputStream in = serialPort.getInputStream();
+//                OutputStream out = serialPort.getOutputStream();
 
-                byte[] buffer = new byte[1024];
-                int len;
-                try {
-                    while ((len = in.read(buffer)) > -1) {
-                        String read = new String(buffer,0,len);
-                        System.out.print(read);
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-               /*
                 (new Thread(new SerialReader(in))).start();
-                (new Thread(new SerialWriter(out))).start();
-                */
+//                (new Thread(new SerialWriter(out))).start();
+
             } else {
                 System.out.println("Error: Only serial ports are handled by this example.");
             }
