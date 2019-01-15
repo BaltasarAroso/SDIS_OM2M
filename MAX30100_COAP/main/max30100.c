@@ -1,4 +1,13 @@
 #include "max30100.h"
+#define CHECK_RD_PTR                                         \
+  {                                                          \
+    max30100_read_byte(MAX30100_REG_FIFO_READ, &aux_rd_ptr); \
+    if (aux_rd_ptr != read_data)                             \
+    {                                                        \
+      i--;                                                   \
+      continue;                                              \
+    }                                                        \
+  }
 
 float red_dc = DC_REMOVER_ALPHA, ir_dc = DC_REMOVER_ALPHA;
 
@@ -14,6 +23,7 @@ void max30100_test_conf();
 esp_err_t max30100_set_mode(uint8_t mode);
 esp_err_t max30100_set_leds(uint8_t red_c, uint8_t ir_c);
 int max30100_hr_ready();
+esp_err_t max30100_reset_fifo();
 
 /*
  * Public functions
@@ -65,6 +75,11 @@ esp_err_t max30100_init()
   max30100_write_byte(MAX30100_REG_INTERRUPT_ENABLE, MAX30100_IE_ENB_HR_RDY);
   max30100_write_byte(MAX30100_REG_INTERRUPT_ENABLE, MAX30100_IE_ENB_TEMP_RDY);
 
+#if defined(_DEBUG_) && defined(DEBUG_INIT)
+  printf("Reseting fifo\n");
+#endif
+  max30100_reset_fifo();
+
   ESP_LOGI("MAX30100", "Initialization done\n");
 
   return ESP_OK;
@@ -105,7 +120,10 @@ esp_err_t max30100_stop(i2c_cmd_handle_t cmd)
 {
   esp_err_t ret;
   i2c_master_stop(cmd);
+  //TODO: piça aqui
   ret = i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
+  if(ret < 0) return ESP_FAIL;
+  ESP_ERROR_CHECK(ret);
 
 #if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Sent queued commands: %d\n", ret);
@@ -145,7 +163,8 @@ esp_err_t max30100_read_byte(uint8_t read_reg, uint8_t *data)
   esp_err_t ret;
   cmd = max30100_start(read_reg, WRITE_BIT);
   ret = max30100_repeat_start(&cmd);
-
+  if (ret < 0)
+    return ESP_FAIL;
 #if defined(_DEBUG_) && defined(DEBUG_I2C)
   printf("Read byte repeat start: %d\n", ret);
 #endif
@@ -200,26 +219,35 @@ esp_err_t max30100_write(uint8_t write_reg, uint8_t *data, size_t data_len)
   return ret;
 }
 
+esp_err_t max30100_reset_fifo()
+{
+  max30100_write_byte(MAX30100_REG_FIFO_WRITE, 0);
+  max30100_write_byte(MAX30100_REG_FIFO_OVERFLOW_COUNTER, 0);
+  max30100_write_byte(MAX30100_REG_FIFO_READ, 0);
+
+  return ESP_OK;
+}
+
 esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
                              size_t *data_len)
 {
-  uint8_t buffer[MAX30100_FIFO_DEPTH*4];
   uint8_t NUM_SAMPLES_TO_READ;
   uint8_t read_data, write_data;
 
+  *data_len = 0;
   max30100_read_byte(MAX30100_REG_FIFO_WRITE, &write_data);
   max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
   NUM_SAMPLES_TO_READ = (write_data - read_data) & (MAX30100_FIFO_DEPTH - 1);
-  *data_len = NUM_SAMPLES_TO_READ;
 
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Write\\read fifo:%d \t%d\n", write_data, read_data);
   printf("NUM SAMPLES: %d\n", NUM_SAMPLES_TO_READ);
 #endif
 
-  if(!NUM_SAMPLES_TO_READ){
-    max30100_write_byte(MAX30100_REG_FIFO_READ,MAX30100_REG_FIFO_READ);
-    return;
+  if (NUM_SAMPLES_TO_READ <= 0)
+  {
+    max30100_write_byte(MAX30100_REG_FIFO_READ, 0);
+    return ESP_OK;
   }
 
   i2c_cmd_handle_t cmd;
@@ -229,61 +257,60 @@ esp_err_t max30100_read_fifo(uint16_t *ir_data, uint16_t *red_data,
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Reading FIFO\n");
 #endif
-  cmd = max30100_start(MAX30100_REG_FIFO_DATA, WRITE_BIT);
-  ret = max30100_repeat_start(&cmd);
 
+  int read = 0;
   // IR[15:8] IR[7:0] RED[15:8] RED[7:0] -> One sample
   for (i = 0; i < NUM_SAMPLES_TO_READ; i++)
   {
-    #if 1
+
     uint8_t data;
+    uint8_t aux_rd_ptr;
     max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
-    printf("Read data: %d\n",read_data);
-    max30100_read_byte(read_data, &data); // Read IR[15:8]
-    ir_data[i] = (uint16_t)data << 8;     // Save IR[15:8]
+    //printf("Before RD PTR: %d\n", read_data);
 
+    CHECK_RD_PTR
+    max30100_read_byte(MAX30100_REG_FIFO_DATA, &data); // Read IR[15:8]
+    ir_data[i] = (uint16_t)data << 8;                  // Save IR[15:8]
+    //printf("data 1: %d\n", data);
+
+    CHECK_RD_PTR
+    max30100_read_byte(MAX30100_REG_FIFO_DATA, &data); // Read IR[7:0]
+    ir_data[i] |= (uint16_t)data;                      // Save IR[7:0]
+    //printf("data 2: %d\n", data);
+
+    CHECK_RD_PTR
+    max30100_read_byte(MAX30100_REG_FIFO_DATA, &data); // Read RED[15:8]
+    red_data[i] = (uint16_t)data << 8;                 // Save RED[15:8]
+    //printf("data 3: %d\n", data);
+
+    CHECK_RD_PTR
+    max30100_read_byte(MAX30100_REG_FIFO_DATA, &data); // Read RED[7:0]
+    red_data[i] |= (uint16_t)data;                     // Save IR[7:0]
+    //printf("data 4: %d\n", data);
+
+    read++;
     max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
-    printf("Read data: %d\n",read_data);
-    max30100_read_byte(read_data, &data); // Read IR[7:0]
-    ir_data[i] |= (uint16_t)data;         // Save IR[7:0]
-
-    max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
-    printf("Read data: %d\n",read_data);
-    max30100_read_byte(read_data, &data); // Read RED[15:8]
-    red_data[i] = (uint16_t)data << 8;    // Save RED[15:8]
-
-    max30100_read_byte(MAX30100_REG_FIFO_READ, &read_data);
-    printf("Read data: %d\n",read_data);
-    max30100_read_byte(read_data, &data); // Read RED[7:0]
-    ir_data[i] |= (uint16_t)data;         // Save IR[7:0]
-#else
-    
-    //fifo ptr doesnt auto increment
-    ret = i2c_master_read(cmd, &buffer, 1, LAST_NACK_VAL);  // Read IR[15:8]
-    ir_data[i] = (uint16_t)buffer << 8;                     // Save IR[15:8]
-
-    ret = i2c_master_read(cmd, &buffer, 1, LAST_NACK_VAL);  // Read IR[7:0]
-    ir_data[i] |= (uint16_t)buffer;                         // Save IR[7:0]
-
-    ret = i2c_master_read(cmd, &buffer, 1, LAST_NACK_VAL);  // Read RED[15:8]
-    red_data[i] = (uint16_t)buffer << 8;                    // Save RED[15:8]
-
-    ret = i2c_master_read(cmd, &buffer, 1, LAST_NACK_VAL);  // Read RED[7:0]
-    ir_data[i] |= (uint16_t)buffer;                         // Save IR[7:0]
-#endif
-    i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
+    //printf("After RD PTR: %d\n", read_data);
 
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
-    printf("IR[%d]: %d\tRED[%d]: %d\n", i, ir_data[i], i, red_data[i]);
+    //printf("IR[%d]: %d\tRED[%d]: %d\n", i, ir_data[i], i, red_data[i]);
 #endif
   }
 
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
-  printf("Read fifo data length: %d\n", *data_len);
+  printf("Read fifo data length: %d\n", read);
 #endif
+  /*
+  i2c_master_stop(cmd);
+  i2c_cmd_link_delete(cmd);*/
+  //max30100_stop(cmd);
 
-  max30100_stop(cmd);
-  return ret;
+  *data_len = read;
+  /*
+  i2c_master_stop(cmd);
+  ret = i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
+  i2c_cmd_link_delete(cmd);*/
+  return ESP_OK;
 }
 
 esp_err_t max30100_update(uint16_t *ir_data, uint16_t *red_data,
@@ -298,7 +325,6 @@ esp_err_t max30100_update(uint16_t *ir_data, uint16_t *red_data,
 #if defined(_DEBUG_) && defined(DEBUG_FIFO)
   printf("Updated data length: %d\n", *data_len);
 #endif
-
   max30100_check_sample(ir_data, red_data, *data_len);
   return ESP_OK;
 }
@@ -397,20 +423,19 @@ esp_err_t max30100_check_sample(uint16_t *ir_data, uint16_t *red_data,
                                 size_t data_len)
 {
   int i;
-  for (i = 0; i < data_len; i++)
+  for (i = 1; i < data_len; i++)
   {
-    step(red_dc, red_data[i]);
-    step(ir_dc, ir_data[i]);
+    red_data[i] = (uint16_t)step(red_data[i], red_data[i - 1]);
+    ir_data[i] = (uint16_t)step(ir_data[i], ir_data[i - 1]);
   }
-
   return ESP_OK;
 }
-float step(float dcw, float x)
+float step(float x, float prev_w)
 {
-  float olddcw = dcw;
-  dcw = (float)x + DC_REMOVER_ALPHA * dcw;
+  float oldcw = x + DC_REMOVER_ALPHA * prev_w;
+  float dcw = (float)oldcw - prev_w;
 
-  return dcw - olddcw;
+  return dcw;
 }
 void max30100_set_led_width(uint8_t led_pulse_width)
 {
