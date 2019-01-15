@@ -3,6 +3,7 @@ package app.org.eclipse.om2m.app;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import gnu.io.*;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -83,7 +84,7 @@ public class M2MApp {
     private static String csePoa = cseProtocol + "://" + cseIp + ":" + csePort;
     private static String appPoa = aeProtocol + "://" + aeIp + ":" + aePort;
 
-    private static String dbPoa = "http://" + aeIp + ":8086";
+    private static String dbPoa = "http://" + cseIp + ":8086";
 
     public static boolean flagSubscription = false;
 
@@ -607,6 +608,47 @@ public class M2MApp {
     }
 
 
+    static void connect (String portName) throws NoSuchPortException, PortInUseException, UnsupportedCommOperationException, IOException {
+
+        CommPortIdentifier portIdentifier = CommPortIdentifier.getPortIdentifier(portName);
+
+        if (portIdentifier.isCurrentlyOwned()) {
+            System.out.println("Error: Port is currently in use");
+        } else {
+            CommPort commPort = portIdentifier.open("M2MApp",2000);
+
+            if (commPort instanceof SerialPort) {
+                SerialPort serialPort = (SerialPort) commPort;
+                serialPort.setSerialPortParams(
+                        115200,
+                        SerialPort.DATABITS_8,
+                        SerialPort.STOPBITS_1,
+                        SerialPort.PARITY_NONE
+                );
+
+                InputStream in = serialPort.getInputStream();
+
+                byte[] buffer = new byte[1024];
+                int len;
+                try {
+                    while ((len = in.read(buffer)) > -1) {
+                        String read = new String(buffer,0,len);
+                        System.out.print(read);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+               /*
+                (new Thread(new SerialReader(in))).start();
+                (new Thread(new SerialWriter(out))).start();
+                */
+            } else {
+                System.out.println("Error: Only serial ports are handled by this example.");
+            }
+        }
+    }
+
+
     public static void main(String[] args) {
     	
 //    	System.out.println("Working Directory = " + System.getProperty("user.dir"));
@@ -632,7 +674,7 @@ public class M2MApp {
             System.out.println("Using address: " + wirelessAddress);
             aeIp = wirelessAddress;
         	appPoa = aeProtocol + "://" + aeIp + ":" + aePort; // update app poa
-            dbPoa = "http://" + aeIp + ":8086";
+            dbPoa = "http://" + cseIp + ":8086";
         }
 
         influxDB = getDatabase("SDIS", "sdis", "sdis_admin");
@@ -668,6 +710,31 @@ public class M2MApp {
                 System.err.println("Could not start delay measurement.");
             }
         });
+
+        boolean bad = false;
+        System.out.print("Opening USB serial port... ");
+        try {
+            connect("COM4");
+        } catch (NoSuchPortException e) {
+            System.err.println("no such usb port.");
+            bad = true;
+        } catch (PortInUseException e) {
+            System.err.println("port is already in use.");
+            bad = true;
+        } catch (UnsupportedCommOperationException e) {
+            System.err.println("bad port configuration.");
+            bad = true;
+        } catch (IOException e) {
+            System.err.println("can't read from port.");
+            bad = true;
+        }
+        if (bad) {
+            System.out.println("Shutting down... ");
+            M2MApp.getInstance().stopServer();
+            System.exit(0);
+            System.out.println("bye.");
+        }
+        System.out.println("done.");
 
 //        String data = "Chuck Testa";
 //
