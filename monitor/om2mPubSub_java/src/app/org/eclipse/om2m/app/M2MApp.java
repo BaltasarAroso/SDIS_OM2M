@@ -19,10 +19,7 @@ import org.influxdb.dto.Query;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.*;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -88,10 +85,13 @@ public class M2MApp {
     private static String dbPoa = "http://" + cseIp + ":8086";
 
     public static boolean flagSubscription = false;
+    public static boolean flagNetworkDelay = false;
+
+    public static HashMap<String, Long> usbTimes;
 
 
     public M2MApp() {
-
+        usbTimes = new HashMap<>();
     }
 
     public static M2MApp getInstance() {
@@ -162,7 +162,15 @@ public class M2MApp {
 
                                     if (ty == 4) {
                                         counterReceptions++;
-                                        insertDB(influxDB, "SDIS", "default", aeName, cin.getString("con"));
+                                        String rn = cin.getString("rn");
+                                        insertDB(
+                                                influxDB,
+                                                "SDIS",
+                                                "default",
+                                                aeName,
+                                                cin.getString("con"),
+                                                System.nanoTime() - usbTimes.get(rn)
+                                        );
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
                                 }
@@ -531,7 +539,7 @@ public class M2MApp {
         }
 
         InfluxDB db = InfluxDBFactory.connect(dbPoa, username, password);
-        db.setLogLevel(InfluxDB.LogLevel.BASIC);
+//        db.setLogLevel(InfluxDB.LogLevel.BASIC);
         execQuery(
                 db,
                 "CREATE DATABASE \"" + database + "\"", ""
@@ -548,14 +556,14 @@ public class M2MApp {
     }
 
     /**
-     *
-     * @param db        InfluxDB connection
+     *  @param db        InfluxDB connection
      * @param database  Database name
      * @param rpName    Retention policy
      * @param sensor    Sensor name
      * @param con       Content (measure)
+     * @param e2e
      */
-    private static void insertDB(InfluxDB db, String database, String rpName, String sensor, String con) {
+    private static void insertDB(InfluxDB db, String database, String rpName, String sensor, String con, long e2e) {
 
         String[] values = con.split(":");
         double value;
@@ -576,8 +584,9 @@ public class M2MApp {
         System.out.println("Writing to database: ");
         System.out.println("\tsensor = " + sensor);
         System.out.println("\tmeasurement = " + value);
-        System.out.println("\tsensor_delay = " + delay * 1000);
+        System.out.println("\tsensor_delay = " + delay);
         System.out.println("\tmonitor_delay = " + avgNetworkDelayNanos + "\n");
+        System.out.println("\te2e_delay = " + e2e + "\n");
 
         try {
             db.write(
@@ -587,8 +596,9 @@ public class M2MApp {
                             .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
                             .addField("sensor", sensor)
                             .addField("measurement", value)
-                            .addField("sensor_delay", delay * 1000)
+                            .addField("sensor_delay", delay)
                             .addField("monitor_delay", avgNetworkDelayNanos)
+                            .addField("e2e_delay", e2e)
                             .build()
             );
         } catch (InfluxDBException.DatabaseNotFoundException e) {
@@ -609,30 +619,51 @@ public class M2MApp {
     }
 
 
-    static void connect (String portName) throws NoSuchPortException, PortInUseException, UnsupportedCommOperationException, IOException {
+    static void connect(String portName)
+            throws NoSuchPortException, PortInUseException, UnsupportedCommOperationException, IOException {
 
         CommPortIdentifier portIdentifier = CommPortIdentifier.getPortIdentifier(portName);
 
         if (portIdentifier.isCurrentlyOwned()) {
             System.out.println("Error: Port is currently in use");
         } else {
-            CommPort commPort = portIdentifier.open("M2MApp",2000);
+            CommPort commPort = portIdentifier.open("M2MApp", 2000);
 
             if (commPort instanceof SerialPort) {
                 SerialPort serialPort = (SerialPort) commPort;
-                serialPort.setSerialPortParams(
-                        115200,
-                        SerialPort.DATABITS_8,
-                        SerialPort.STOPBITS_1,
-                        SerialPort.PARITY_NONE
-                );
+                serialPort.setSerialPortParams(115200, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
+                        SerialPort.PARITY_NONE);
 
-                InputStream in = serialPort.getInputStream();
-//                OutputStream out = serialPort.getOutputStream();
+                BufferedReader in = new BufferedReader(new InputStreamReader(serialPort.getInputStream()));
 
-                (new Thread(new SerialReader(in))).start();
-//                (new Thread(new SerialWriter(out))).start();
+                String read = null;
+                do {
+                    long timestamp;
+                    try {
+                        read = in.readLine();
+                        timestamp = System.nanoTime();
+                    } catch (IOException e) {
+                        continue;
+                    }
+                    System.out.println(read);
 
+                    String[] fields = read.split(";");
+                    if (!fields[0].equals("Publish"))
+                        continue;
+
+                    try {
+                        String info = fields[1].split(":")[1];
+                        long ts = (long) Double.parseDouble(fields[2].split(":")[1]);  // garbage (for now)
+
+                        usbTimes.put(info, timestamp);
+
+                    } catch (NumberFormatException ignored) {}
+
+                } while (true);
+                /*
+                 * (new Thread(new SerialReader(in))).start(); (new Thread(new
+                 * SerialWriter(out))).start();
+                 */
             } else {
                 System.out.println("Error: Only serial ports are handled by this example.");
             }
@@ -681,6 +712,7 @@ public class M2MApp {
         // Start measuring network delay
         Executors.newSingleThreadExecutor().execute(() -> {
             if(M2MApp.getInstance().createContainer("Monitor", "Pong") == 201) {
+                flagNetworkDelay = true;
                 int i = 1;
                 while (true) {
                     long nanosElapsed = M2MApp.getInstance().createContentInstance(
@@ -694,7 +726,7 @@ public class M2MApp {
                     updateNetworkDelay(nanosElapsed);
 
                     try {
-                        Thread.sleep(16);
+                        Thread.sleep(500);
                     } catch (InterruptedException ignored) {}
                 }
             } else {
@@ -702,30 +734,19 @@ public class M2MApp {
             }
         });
 
-        boolean bad = false;
-        System.out.print("Opening USB serial port... ");
-        try {
-            connect("COM4");
-        } catch (NoSuchPortException e) {
-            System.err.println("no such usb port.");
-            bad = true;
-        } catch (PortInUseException e) {
-            System.err.println("port is already in use.");
-            bad = true;
-        } catch (UnsupportedCommOperationException e) {
-            System.err.println("bad port configuration.");
-            bad = true;
-        } catch (IOException e) {
-            System.err.println("can't read from port.");
-            bad = true;
+        if (flagSubscription && flagNetworkDelay) {
+            System.out.print("Opening USB serial port... ");
+            try {
+                connect("COM4");
+            } catch (Exception e) {
+                System.err.println(e.getMessage() + ".");
+                System.out.println("Shutting down... ");
+                M2MApp.getInstance().stopServer();
+                System.exit(0);
+                System.out.println("bye.");
+            }
+            System.out.println("done.");
         }
-        if (bad) {
-            System.out.println("Shutting down... ");
-            M2MApp.getInstance().stopServer();
-            System.exit(0);
-            System.out.println("bye.");
-        }
-        System.out.println("done.");
 
 //        String data = "Chuck Testa";
 //
