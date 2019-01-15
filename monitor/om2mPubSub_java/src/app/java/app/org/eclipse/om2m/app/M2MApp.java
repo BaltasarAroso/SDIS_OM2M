@@ -2,7 +2,6 @@ package app.org.eclipse.om2m.app;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -750,7 +749,8 @@ public class M2MApp {
                 {
                     while ( ( len = in.read(buffer)) > -1 )
                     {
-                        System.out.print(new String(buffer,0,len));
+                    	String read = new String(buffer,0,len);
+                        System.out.print(read);
                     }
                 }
                 catch ( IOException e )
