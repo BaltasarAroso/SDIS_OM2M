@@ -58,7 +58,7 @@ public class M2MApp {
 
     private static String originator = "admin:admin";
     private static String cseProtocol = "http";
-    private static String cseIp = "192.168.137.1";
+    private static String cseIp = "192.168.137.98";
     private static int csePort = 8080;
     private static String cseId = "in-cse";
     private static String cseName = "dartes";
@@ -173,7 +173,7 @@ public class M2MApp {
 
                 // Server needs the response. Otherwise, it issues the following in the terminal:
                 // org.apache.http.NoHttpResponseException: IPXXX:PORTYYY failed to respond
-                httpExchange.sendResponseHeaders(204, -1);
+                httpExchange.sendResponseHeaders(200, -1);
                 httpExchange.close();
 
             } catch (Exception e) {
@@ -594,7 +594,11 @@ public class M2MApp {
         } catch (InfluxDBException.DatabaseNotFoundException e) {
             System.out.print("Database appears to have vanished. Recreating... ");
             influxDB = getDatabase("SDIS", "sdis", "sdis_admin");
-            System.out.println("recreated");
+            System.out.println("recreated.");
+        } catch (InfluxDBException e) {
+            System.out.print("Retention policy not found. Recreating... ");
+            influxDB = getDatabase("SDIS", "sdis", "sdis_admin");
+            System.out.println("recreated.");
         }
     }
 
@@ -607,23 +611,23 @@ public class M2MApp {
 
     public static void main(String[] args) {
     	
-    	System.out.println("Working Directory = " + System.getProperty("user.dir"));
+//    	System.out.println("Working Directory = " + System.getProperty("user.dir"));
 
-        if (args.length == 3) {
-            try {
-                frequency = Integer.parseInt(args[0]);
-                size = Integer.parseInt(args[1]);
-                run = Integer.parseInt(args[2]);
-            } catch (NumberFormatException e) {
-                System.err.println("Arguments" + args[0] + args[1] + args[2] + " must be integers.");
-                System.exit(1);
-            }
-        }
+//        if (args.length == 3) {
+//            try {
+//                frequency = Integer.parseInt(args[0]);
+//                size = Integer.parseInt(args[1]);
+//                run = Integer.parseInt(args[2]);
+//            } catch (NumberFormatException e) {
+//                System.err.println("Arguments" + args[0] + args[1] + args[2] + " must be integers.");
+//                System.exit(1);
+//            }
+//        }
 
-        System.out.println("oM2M PoA: " + csePoa);
-        System.out.println("Publisher/Subscriber PoA: " + appPoa);
-        System.out.println("Number of Threads: " + numberThreads);
-        System.out.println("Folder for files: " + filesFolder);
+//        System.out.println("oM2M PoA: " + csePoa);
+//        System.out.println("Publisher/Subscriber PoA: " + appPoa);
+//        System.out.println("Number of Threads: " + numberThreads);
+//        System.out.println("Folder for files: " + filesFolder);
 
         String wirelessAddress;
         if ((wirelessAddress = M2MApp.getInstance().getWirelessAddress()) != null) {
