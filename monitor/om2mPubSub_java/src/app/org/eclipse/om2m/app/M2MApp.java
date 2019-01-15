@@ -58,19 +58,19 @@ public class M2MApp {
 
     private static String originator = "admin:admin";
     private static String cseProtocol = "http";
-    private static String cseIp = "192.168.137.98";
+    private static String cseIp = "192.168.137.1";
     private static int csePort = 8080;
     private static String cseId = "in-cse";
     private static String cseName = "dartes";
 
-    private static String aeNamePub = "Actuation";
-    private static int appPubId = 12345;
-
-    private static String aeNameMaster = "master";
-    private static int appMasterId = 67891;
-
-    private static String cntName = "HR";
-    private static String cntNameMaster = "ctrlcmd";
+//    private static String aeNamePub = "Actuation";
+//    private static int appPubId = 12345;
+//
+//    private static String aeNameMaster = "master";
+//    private static int appMasterId = 67891;
+//
+//    private static String cntName = "HR";
+//    private static String cntNameMaster = "ctrlcmd";
 
     private static String aeMonitorName = "Monitor";
     private static String aeProtocol = "http";
@@ -160,9 +160,7 @@ public class M2MApp {
 
                                     if (ty == 4) {
                                         counterReceptions++;
-                                        String ciName = cin.getString("rn");
-                                        String con = cin.getString("con");
-                                        insertDB(influxDB, "SDIS", "default", aeName, con);
+                                        insertDB(influxDB, "SDIS", "default", aeName, cin.getString("con"));
                                         //M2MApp.getInstance().addToEpochSub(ciName, epoch);
                                     }
                                 }
@@ -663,7 +661,7 @@ public class M2MApp {
                     updateNetworkDelay(nanosElapsed);
 
                     try {
-                        Thread.sleep(500);
+                        Thread.sleep(16);
                     } catch (InterruptedException ignored) {}
                 }
             } else {
