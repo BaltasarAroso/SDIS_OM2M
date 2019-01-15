@@ -30,7 +30,7 @@
   {                                            \
     false;                                     \
   }
-#define TEST_ASSERT(condition, line, message, true) TEST_CONDITION(condition, true, {ESP_LOGV(line, message);return; })
+#define TEST_ASSERT(condition, line, message, true) TEST_CONDITION(condition, true, {ESP_LOGW(line, message);return; })
 #define TEST_ASSERT_NULL(pointer, line, message, action) TEST_ASSERT(((pointer) == NULL), line, message, action)
 #define TEST_ASSERT_NOT_NULL(pointer, line, message, action) TEST_ASSERT(((pointer) != NULL), line, message, action)
 
@@ -42,9 +42,9 @@
                    return;);                                           \
   }
 
-#define TEST_JSON_ASSERT(object, value)                                   \
-  {                                                                       \
-    TEST_ASSERT_NOT_NULL(object, value, "Not JSON", cJSON_Print(object)); \
+#define TEST_JSON_ASSERT(object, value)                                               \
+  {                                                                                   \
+    TEST_ASSERT_NOT_NULL(object, value, "Not JSON", /*printf(cJSON_Print(object))*/); \
   }
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
@@ -70,11 +70,17 @@ static inline void set_timeout(coap_tick_t *timer, const unsigned int seconds)
   *timer += seconds * COAP_TICKS_PER_SECOND;
 }
 
+static inline double get_timestamp()
+{
+  return xTaskGetTickCount() / portTICK_RATE_MS;
+}
+
 // Sensor variables
 uint16_t ir_buffer[MAX30100_FIFO_DEPTH];
 uint16_t red_buffer[MAX30100_FIFO_DEPTH];
 size_t data_len = 0;
 double avg;
+double diff_avg = 0, alpha = 0.1;
 
 // CoAP/OM2M variables
 static EventGroupHandle_t coap_group;
@@ -138,22 +144,29 @@ static void request_hanlder(struct coap_context_t *ctx,
   TEST_JSON_ASSERT(requestJson, "requestJson");
 
   cJSON *m2m_sgn = cJSON_GetObjectItem(requestJson, "m2m:sgn");
+  cJSON_Delete(requestJson);
   TEST_JSON_ASSERT(m2m_sgn, "m2m:sgn");
 
   cJSON *m2m_nev = cJSON_GetObjectItem(m2m_sgn, "m2m:nev");
+  cJSON_Delete(m2m_sgn);
   TEST_JSON_ASSERT(m2m_nev, "m2m:nev");
 
   cJSON *m2m_rep = cJSON_GetObjectItem(m2m_nev, "m2m:rep");
+  cJSON_Delete(m2m_nev);
   TEST_JSON_ASSERT(m2m_rep, "m2m:rep");
 
   cJSON *m2m_cin = cJSON_GetObjectItem(m2m_rep, "m2m:cin");
+  cJSON_Delete(m2m_rep);
   TEST_JSON_ASSERT(m2m_cin, "m2m:cin");
 
   cJSON *con = cJSON_GetObjectItem(m2m_cin, "con");
+  cJSON_Delete(m2m_cin);
   TEST_JSON_ASSERT(con, "con");
 
   char *con_str = cJSON_GetStringValue(con);
+  cJSON_Delete(con);
   printf("Request con: %s\n", con_str);
+  free(con_str);
 }
 
 static void message_handler(struct coap_context_t *ctx,
@@ -161,9 +174,9 @@ static void message_handler(struct coap_context_t *ctx,
                             const coap_address_t *remote, coap_pdu_t *sent,
                             coap_pdu_t *received, const coap_tid_t id)
 {
-  unsigned char *data = NULL;
+  char *data = NULL;
   size_t data_len;
-  int has_data = coap_get_data(received, &data_len, &data);
+  int has_data = coap_get_data(received, &data_len, (unsigned char **)&data);
 
 #if defined(DEBUG_COAP)
   printf("Response class received: %d\n", COAP_RESPONSE_CLASS(received->hdr->code));
@@ -187,7 +200,63 @@ static void message_handler(struct coap_context_t *ctx,
   {
     if (COAP_RESPONSE_CLASS(received->hdr->code) == COAP_RESPONSE_CLASS(COAP_RESPONSE_201))
     { // Published
+      if (has_data)
+      {
+        double current_timestamp = get_timestamp();
+
+        cJSON *created = cJSON_Parse(data);
+        TEST_JSON_ASSERT(created, "Created");
+
+        cJSON *m2m_cin = cJSON_GetObjectItem(created, "m2m:cin");
+        cJSON_Delete(created);
+        TEST_JSON_ASSERT(m2m_cin, "m2m:cin");
+
+        cJSON *rn = cJSON_GetObjectItem(m2m_cin, "rn");
+        TEST_JSON_ASSERT(rn, "rn");
+
+        char *rn_str = cJSON_GetStringValue(rn);
+        if (rn_str[0] != 'd')
+        {
+          cJSON_Delete(m2m_cin);
+          free(rn_str);
+          return;
+        }
+        printf(PING "\n");
+
+        cJSON *con = cJSON_GetObjectItem(m2m_cin, "con");
+        cJSON_Delete(m2m_cin);
+        TEST_JSON_ASSERT(con, "con");
+
+        char *con_str = cJSON_GetStringValue(con);
+        cJSON_Delete(con);
+
+        double received;
+        sscanf(con_str, "%lf", &received);
+        free(con_str);
+
+        double diff = current_timestamp - received;
+        diff_avg = diff_avg * (1 - alpha) + diff * alpha;
+        printf("Diff: %lf\n", diff_avg);
+      }
     }
+  }
+}
+
+static void ping(void *pvParameters)
+{
+  char data[30];
+  char name[30];
+  unsigned short int i = 0;
+  printf("Starting ping\n");
+  while (1)
+  {
+    double timestamp = get_timestamp();
+    printf("Ping\n");
+    sprintf(data, "%lf", timestamp);
+    sprintf(name, "delay_%d", i);
+    om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, PING,
+                                      name, data, &i, COAP_REQUEST_POST);
+    vTaskDelay(500 / portTICK_RATE_MS);
   }
 }
 
@@ -279,8 +348,11 @@ static void om2m_coap_client_task(void *pvParameters)
   create_entity(AE_NAME);                         // Create ESP8266
   create_container(AE_NAME, CONTAINER_NAME);      // Create ESP8266/HR
   create_container(AE_NAME, ACTUATION);           // Create ESP8266/Actuation
+  create_container(AE_NAME, PING);                // Create ESP8266/DELAY
   create_entity(CNTRL_SUB);                       // Create Sensor
   create_sub(AE_NAME, ACTUATION, CNTRL_SUB, SUB); // Subscribe to ESP8266/Actuation with Sensor entity
+
+  xTaskCreate(ping, "ping_pong", 10000, NULL, 5, NULL);
 
   char name[50];
 #if defined(TESTING) && defined(TESTE_PUBLISH)
@@ -288,7 +360,7 @@ static void om2m_coap_client_task(void *pvParameters)
 #else
   char data[15];
 #endif
-  unsigned short int i = 0, j = 11;
+  unsigned short int i = 0;
   unsigned short int msg_id = rand();
   while (1)
   {
@@ -307,11 +379,11 @@ static void om2m_coap_client_task(void *pvParameters)
     xEventGroupClearBits(coap_group, BUFFER_BIT);
 
     //Send Heart Beat
-    if (avg <= 0)
-      sprintf(data, "%f", avg);
+    if (avg > 0)
+      sprintf(data, "%lf:%lf", avg, diff_avg);
     else
       continue;
-     printf("HeartRate: %f\n", avg);
+    printf("HeartRate: %f\n", avg);
     sprintf(name, "HB_%d", i);
     om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
                                       name, data, &i, COAP_REQUEST_POST);
