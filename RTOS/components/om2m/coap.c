@@ -156,9 +156,6 @@ int om2m_coap_create_content_instance(coap_context_t *ctx, coap_address_t dst_ad
   }
 
   *msg_id = *msg_id + 1;
-
-  printf("send id = %d\n", htons(request->hdr->id));
-
   free(out);
   return rc;
 }

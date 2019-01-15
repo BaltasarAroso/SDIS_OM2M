@@ -52,8 +52,8 @@
 #define COAP_SERVER_PORT 5683
 //#define TESTE_PUBLISH
 #define TESTE_SUB_PUB
-#define DEBUG_COAP
-#define TESTING
+//#define DEBUG_COAP
+//#define TESTING
 #define SENSOR
 //#define DEBUG_SENSOR
 
@@ -69,10 +69,16 @@ static inline void set_timeout(coap_tick_t *timer, const unsigned int seconds)
   coap_ticks(timer);
   *timer += seconds * COAP_TICKS_PER_SECOND;
 }
-
-static inline double get_timestamp()
+uint64_t nanos(struct timeval *ts)
 {
-  return xTaskGetTickCount() / portTICK_RATE_MS;
+  return ts->tv_sec * (uint64_t)1000000000L + ts->tv_usec * (uint64_t)1000L;
+}
+static inline uint64_t get_timestamp()
+{
+  struct timeval tv;
+  struct timezone tz;
+  gettimeofday(&tv, &tz);
+  return nanos(&tv);
 }
 
 // Sensor variables
@@ -165,7 +171,7 @@ static void request_hanlder(struct coap_context_t *ctx,
 
   char *con_str = cJSON_GetStringValue(con);
   cJSON_Delete(con);
-  printf("Request con: %s\n", con_str);
+  //printf("Request con: %s\n", con_str);
   free(con_str);
 }
 
@@ -221,7 +227,6 @@ static void message_handler(struct coap_context_t *ctx,
           free(rn_str);
           return;
         }
-        printf(PING "\n");
 
         cJSON *con = cJSON_GetObjectItem(m2m_cin, "con");
         cJSON_Delete(m2m_cin);
@@ -230,13 +235,13 @@ static void message_handler(struct coap_context_t *ctx,
         char *con_str = cJSON_GetStringValue(con);
         cJSON_Delete(con);
 
-        double received;
-        sscanf(con_str, "%lf", &received);
+        uint64_t received;
+        sscanf(con_str, "%lld", (long long *)&received);
         free(con_str);
 
-        double diff = current_timestamp - received;
-        diff_avg = diff_avg * (1 - alpha) + diff * alpha;
-        printf("Diff: %lf\n", diff_avg);
+        uint64_t diff = current_timestamp - received;
+        diff_avg = diff_avg * (1 - alpha) + diff * alpha / 2;
+        //printf("Diff: %lf\n", diff_avg);
       }
     }
   }
@@ -247,12 +252,10 @@ static void ping(void *pvParameters)
   char data[30];
   char name[30];
   unsigned short int i = 0;
-  printf("Starting ping\n");
   while (1)
   {
-    double timestamp = get_timestamp();
-    printf("Ping\n");
-    sprintf(data, "%lf", timestamp);
+    uint64_t timestamp = get_timestamp();
+    sprintf(data, "%lld", (long long)timestamp);
     sprintf(name, "delay_%d", i);
     om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, PING,
                                       name, data, &i, COAP_REQUEST_POST);
@@ -355,26 +358,11 @@ static void om2m_coap_client_task(void *pvParameters)
   xTaskCreate(ping, "ping_pong", 10000, NULL, 5, NULL);
 
   char name[50];
-#if defined(TESTING) && defined(TESTE_PUBLISH)
-  char data[] = "COMUNICATION TESTE";
-#else
-  char data[15];
-#endif
+  char data[20];
   unsigned short int i = 0;
-  unsigned short int msg_id = rand();
+
   while (1)
   {
-    msg_id = rand();
-#if (defined(TESTING) && defined(TESTE_PUBLISH))
-
-    sprintf(name, "%d", msg_id);
-    printf("Name: %s\n", name);
-    printf("Data to send: %s\n", data);
-
-    om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
-                                      name, data, &i, COAP_REQUEST_POST);
-
-#else
     xEventGroupWaitBits(coap_group, BUFFER_BIT, false, true, portMAX_DELAY);
     xEventGroupClearBits(coap_group, BUFFER_BIT);
 
@@ -383,12 +371,11 @@ static void om2m_coap_client_task(void *pvParameters)
       sprintf(data, "%lf:%lf", avg, diff_avg);
     else
       continue;
-    printf("HeartRate: %f\n", avg);
     sprintf(name, "HB_%d", i);
+    printf("Publish;rn:%s;timestamp:%lld\n", name, get_timestamp());
     om2m_coap_create_content_instance(ctx, dst_addr, AE_NAME, CONTAINER_NAME,
                                       name, data, &i, COAP_REQUEST_POST);
     //TODO: Send SpO2_%d id
-#endif
     vTaskDelay(1000 / portTICK_RATE_MS);
   }
   while (1)
@@ -486,23 +473,6 @@ static void create_container(char *entity, char *container)
 
 static void init_coap(void)
 {
-#if defined(TESTING) && defined(DEBUG_COAP)
-  printf("COAP_RESPONSE_200: %d\n", COAP_RESPONSE_CODE(200));
-  printf("COAP_RESPONSE_201: %d\n", COAP_RESPONSE_CODE(201));
-  printf("COAP_RESPONSE_205: %d\n", COAP_RESPONSE_CODE(205));
-  printf("COAP_RESPONSE_304: %d\n", COAP_RESPONSE_CODE(304));
-  printf("COAP_RESPONSE_400: %d\n", COAP_RESPONSE_CODE(400));
-  printf("COAP_RESPONSE_401: %d\n", COAP_RESPONSE_CODE(401));
-  printf("COAP_RESPONSE_402: %d\n", COAP_RESPONSE_CODE(402));
-  printf("COAP_RESPONSE_403: %d\n", COAP_RESPONSE_CODE(403));
-  printf("COAP_RESPONSE_404: %d\n", COAP_RESPONSE_CODE(404));
-  printf("COAP_RESPONSE_405: %d\n", COAP_RESPONSE_CODE(405));
-  printf("COAP_RESPONSE_415: %d\n", COAP_RESPONSE_CODE(415));
-  printf("COAP_RESPONSE_500: %d\n", COAP_RESPONSE_CODE(500));
-  printf("COAP_RESPONSE_501: %d\n", COAP_RESPONSE_CODE(501));
-  printf("COAP_RESPONSE_503: %d\n", COAP_RESPONSE_CODE(503));
-  printf("COAP_RESPONSE_504: %d\n", COAP_RESPONSE_CODE(504));
-#endif
   // wait for AP connection
   xEventGroupWaitBits(coap_group, CONNECTED_BIT, false, true,
                       portMAX_DELAY);
@@ -539,13 +509,13 @@ void app_main(void)
   printf("Starting ESP\n");
   ESP_ERROR_CHECK(nvs_flash_init());
   coap_group = xEventGroupCreate();
+
 #if defined(SENSOR)
   max30100_init();
   xTaskCreate(max30100_updater, "updater", 10000, NULL, 5, NULL);
   //xTaskCreate(adjust_current, "ajdust current", 10000, NULL, 3, NULL);
 #endif
 #ifndef DEBUG_SENSOR
-  srand(time(NULL)); // Initialization, should only be called once.
   wifi_conn_init();
   init_coap();
   xTaskCreate(om2m_coap_client_task, "coap", 16384, NULL, 5, NULL);

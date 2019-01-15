@@ -249,7 +249,7 @@ coap_network_send(struct coap_context_t *context UNUSED_PARAM,
 
   struct coap_endpoint_t *ep =
     (struct coap_endpoint_t *)local_interface;
-    printf("sending...!\n");
+    //printf("sending...!\n");
 #ifndef WITH_CONTIKI
   return sendto(ep->handle.fd, data, datalen, 0, (struct sockaddr*)&dst->addr.sa, sizeof(struct sockaddr));
 #else /* WITH_CONTIKI */
