@@ -1,8 +1,22 @@
 package app.org.eclipse.om2m.app;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -18,16 +32,13 @@ import org.influxdb.dto.Query;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.net.*;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import gnu.io.CommPort;
+import gnu.io.CommPortIdentifier;
+import gnu.io.SerialPort;
 
 
 /**
@@ -606,7 +617,7 @@ public class M2MApp {
     }
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
     	
     	System.out.println("Working Directory = " + System.getProperty("user.dir"));
 
@@ -667,6 +678,9 @@ public class M2MApp {
                 System.err.println("Could not start delay measurement.");
             }
         });
+        
+        System.out.println("Starting usb serial");
+        connect("COM6");
 
 //        String data = "Chuck Testa";
 //
@@ -710,6 +724,50 @@ public class M2MApp {
         System.exit(0);
 
         return;*/
+    }
+    
+    static void connect ( String portName ) throws Exception
+    {
+        CommPortIdentifier portIdentifier = CommPortIdentifier.getPortIdentifier(portName);
+        if ( portIdentifier.isCurrentlyOwned() )
+        {
+            System.out.println("Error: Port is currently in use");
+        }
+        else
+        {
+            CommPort commPort = portIdentifier.open("M2MApp",2000);
+            
+            if ( commPort instanceof SerialPort )
+            {
+                SerialPort serialPort = (SerialPort) commPort;
+                serialPort.setSerialPortParams(115200,SerialPort.DATABITS_8,SerialPort.STOPBITS_1,SerialPort.PARITY_NONE);
+                
+                InputStream in = serialPort.getInputStream();
+
+                byte[] buffer = new byte[1024];
+                int len = -1;
+                try
+                {
+                    while ( ( len = in.read(buffer)) > -1 )
+                    {
+                        System.out.print(new String(buffer,0,len));
+                    }
+                }
+                catch ( IOException e )
+                {
+                    e.printStackTrace();
+                }            
+               /* 
+                (new Thread(new SerialReader(in))).start();
+                (new Thread(new SerialWriter(out))).start();
+                */
+
+            }
+            else
+            {
+                System.out.println("Error: Only serial ports are handled by this example.");
+            }
+        }     
     }
 
 }
