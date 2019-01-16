@@ -367,7 +367,7 @@ static void om2m_coap_client_task(void *pvParameters)
     xEventGroupClearBits(coap_group, BUFFER_BIT);
 
     //Send Heart Beat
-    if (avg > 0)
+    if (avg >= 0)
       sprintf(data, "%lf:%lf", avg, diff_avg);
     else
       continue;
