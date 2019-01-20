@@ -120,7 +120,6 @@ esp_err_t max30100_stop(i2c_cmd_handle_t cmd)
 {
   esp_err_t ret;
   i2c_master_stop(cmd);
-  //TODO: piça aqui
   ret = i2c_master_cmd_begin(MAX30100_NUM, cmd, 1000 / portTICK_RATE_MS);
   if(ret < 0) return ESP_FAIL;
   ESP_ERROR_CHECK(ret);
